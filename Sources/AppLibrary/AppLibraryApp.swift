@@ -1,0 +1,115 @@
+import SwiftUI
+
+class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // 0. IMMEDIATE LOG
+        print("!!! APP DELEGATE DID FINISH LAUNCHING (SYNCHRONOUS) !!!")
+        
+        // 1. Identity: Ensure we are a regular app to show Menu Bar and Dock icon
+        NSApplication.shared.setActivationPolicy(.regular)
+        
+        // 2. Activation Stunt (Delayed for Xcode/Terminal focus stealing)
+        // We do this in AppDelegate to GUARANTEE it runs, regardless of Window/View loading state.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            print("---------- DIAGNOSTICS START (AppDelegate) ----------")
+            print("Activation Policy: \(NSApplication.shared.activationPolicy().rawValue) (0=regular, 1=accessory, 2=prohibited)")
+            print("App isActive: \(NSApplication.shared.isActive)")
+            
+            // Aggressively force front
+            NSApplication.shared.activate(ignoringOtherApps: true)
+            
+            if let window = NSApplication.shared.windows.first {
+                print("Window FOUND. Title: '\(window.title)'")
+                print("Window canBecomeKey: \(window.canBecomeKey)")
+                // Check if we need to force it
+                if !window.isKeyWindow {
+                    window.makeKeyAndOrderFront(nil)
+                }
+                print("Window isKeyWindow (Post-Force): \(window.isKeyWindow)")
+            } else {
+                print("NO WINDOW FOUND! (This is unexpected in DidFinishLaunching with SwiftUI)")
+                // If SwiftUI hasn't created the window yet, we might be too early even with 0.5s?
+                // But usually the WindowGroup is initialized by now.
+            }
+            print("---------- DIAGNOSTICS END ----------")
+            
+            // Re-apply menu to fight SwiftUI re-inserting default menus
+            self.setupMinimalMenu()
+        }
+        
+        // 3. Global Mouse Monitor (Close on click outside)
+        NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { _ in
+            // Safety Check: Is the mouse inside our window?
+            // Global monitor shouldn't fire for local events, but if it does (or if window is weird), ensure we don't self-close.
+            let mouseLocation = NSEvent.mouseLocation
+            if let window = NSApplication.shared.windows.first(where: { $0.isVisible }) {
+                if window.frame.contains(mouseLocation) {
+                    return // Clicked inside
+                }
+            }
+            
+            if NSApplication.shared.isActive {
+                NSApplication.shared.hide(nil)
+            }
+        }
+        
+        // 4. Customize Menu Bar - Remove all menus except app menu
+        // We do this inside async loops to ensure we override SwiftUI's default menu reconstruction
+        DispatchQueue.main.async {
+            self.setupMinimalMenu()
+        }
+    }
+    
+    func setupMinimalMenu() {
+        let mainMenu = NSMenu()
+        
+        // App Menu (Satus)
+        let appMenuItem = NSMenuItem()
+        let appMenu = NSMenu(title: "Satus") // Title often needed for the system to recognize it as App Menu
+        
+        // About
+        let aboutItem = NSMenuItem(
+            title: "About Satus",
+            action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
+            keyEquivalent: ""
+        )
+        appMenu.addItem(aboutItem)
+        
+        appMenu.addItem(NSMenuItem.separator())
+        
+        // Quit
+        let quitItem = NSMenuItem(
+            title: "Quit Satus",
+            action: #selector(NSApplication.terminate(_:)),
+            keyEquivalent: "q"
+        )
+        appMenu.addItem(quitItem)
+        
+        appMenuItem.submenu = appMenu
+        mainMenu.addItem(appMenuItem)
+        
+        NSApplication.shared.mainMenu = mainMenu
+    }
+}
+
+@main
+struct AppLibraryApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+
+    var body: some Scene {
+        WindowGroup(id: "mainwindow") {
+            ContentView()
+                .frame(minWidth: 600, minHeight: 400)
+                .background(VisualEffectView(material: .windowBackground, blendingMode: .behindWindow))
+                .onAppear {
+                    // Previous logic moved to ContentView to access AppService
+                }
+                .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
+                     NSApplication.shared.hide(nil)
+                }
+        }
+        .windowStyle(.hiddenTitleBar)
+    }
+}
+
+
