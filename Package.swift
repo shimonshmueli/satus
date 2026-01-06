@@ -2,24 +2,24 @@
 import PackageDescription
 
 let package = Package(
-    name: "AppLibrary",
+    name: "Satus",
     platforms: [
         .macOS(.v14)
     ],
     products: [
-        .executable(name: "Satus", targets: ["AppLibrary"])
+        .executable(name: "Satus", targets: ["Satus"])
     ],
     targets: [
         .executableTarget(
-            name: "AppLibrary",
-            path: "Sources/AppLibrary",
+            name: "Satus",
+            path: "Sources/Satus",
             resources: [],
             linkerSettings: [
                 .unsafeFlags([
                     "-Xlinker", "-sectcreate",
                     "-Xlinker", "__TEXT",
                     "-Xlinker", "__info_plist",
-                    "-Xlinker", "Sources/AppLibrary/Info.plist"
+                    "-Xlinker", "Sources/Satus/Info.plist"
                 ])
             ]
         )

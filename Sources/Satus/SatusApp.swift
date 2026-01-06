@@ -93,7 +93,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 @main
-struct AppLibraryApp: App {
+struct SatusApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     var body: some Scene {

@@ -22,7 +22,7 @@ cp .build/release/Satus "$APP_NAME/Contents/MacOS/Satus"
 # 4. Create Info.plist
 # 4. Copy Info.plist
 echo "Copying Info.plist..."
-cp Sources/AppLibrary/Info.plist "$APP_NAME/Contents/Info.plist"
+cp Sources/Satus/Info.plist "$APP_NAME/Contents/Info.plist"
 
 # 5. Sign (Ad-hoc)
 echo "Signing Satus..."
