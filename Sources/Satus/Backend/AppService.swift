@@ -40,6 +40,8 @@ class AppService: ObservableObject {
         didSet { savePreferences() }
     }
     
+
+    
     // Transient state for focus management
     @Published var triggeredByShortcut: Bool = false
 
@@ -598,6 +600,7 @@ class AppService: ObservableObject {
         }
         
         if let debug = prefs.isDebugMode { self.isDebugMode = debug }
+
                 
         
         self.tags = prefs.tags.map {

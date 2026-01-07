@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 
 enum SidebarSelection: Hashable {
@@ -8,6 +9,8 @@ enum SidebarSelection: Hashable {
     case untagged
     case tag(UUID)
 }
+
+
 
 struct ContentView: View {
     @StateObject var appService = AppService()
@@ -54,6 +57,9 @@ struct ContentView: View {
             return appService.apps.filter { $0.tags.contains(id) }
         }
     }
+    
+
+    
     
     @State private var window: NSWindow?
 
@@ -124,6 +130,9 @@ struct ContentView: View {
                         .frame(width: 80)
                         
                         
+
+                        
+                        
                         Button(action: { showSettings = true }) {
                             Image(systemName: "gearshape")
                                 .foregroundColor(.secondary)
@@ -161,71 +170,67 @@ struct ContentView: View {
                            .padding(.horizontal)
                         }
                         
-                        Group {
-                            if appService.viewMode == .grid {
-                                SmartGridView(
-                                    items: gridItems,
-                                    onLaunch: { app in
-                                        if case .tag(let id) = selection {
-                                            appService.recordTagUsage(id: id)
-                                        }
-                                        appService.launch(app: app)
-                                    },
-                                    onUpdateSize: { app, size in
-                                        appService.setSize(size, for: app.id)
-                                    },
-                                    onToggleTag: { app, tag in
-                                        // Explicit lookup to avoid wrapper confusion
-                                        appService.toggleTag(tag, for: app.id)
-                                    },
-                                    onAddTag: {
-                                        let newTag = appService.addTag(name: "New Tag")
-                                        selection = .tag(newTag.id)
-                                        editingTagId = newTag.id
-                                        focusedField = newTag.id
-                                    },
-                                    onQuit: (selection == .openApps) ? { app in appService.quitApp(app: app) } : nil,
-                                    onHide: (selection == .openApps) ? { app in appService.hiddenAppBundleIDs.insert(app.id) } : nil,
-                                    onHoverApp: { name in hoveredAppName = name },
-                                    availableTags: appService.tags,
-                                    availableWidth: geometry.size.width,
-                                    focusedAppID: $focusedAppID
-                                )
-                                .environmentObject(appService)
-                                // Ensure search yields focus when shortcut triggered
-                                // Task logic removed
-
-                            } else {
-                                AppListView(
-                                    items: gridItems,
-                                    onLaunch: { app in
-                                        if case .tag(let id) = selection {
-                                            appService.recordTagUsage(id: id)
-                                        }
-                                        appService.launch(app: app)
-                                    },
-                                    onQuit: (selection == .openApps) ? { app in appService.quitApp(app: app) } : nil,
-                                    onHide: (selection == .openApps) ? { app in appService.hiddenAppBundleIDs.insert(app.id) } : nil,
-                                    availableTags: appService.tags,
-                                    iconSize: baseIconSize,
-                                    onToggleTag: { app, tag in appService.toggleTag(tag, for: app.id) },
-                                    onAddTag: {
-                                        let newTag = appService.addTag(name: "New Tag")
-                                        selection = .tag(newTag.id)
-                                        editingTagId = newTag.id
-                                        focusedField = newTag.id
-                                    },
-                                    onHoverApp: { name in hoveredAppName = name }
-                                )
-                                // Task logic removed
-
+                        LazyVStack(alignment: .leading, spacing: 20, pinnedViews: []) {
+                            Group {
+                                if appService.viewMode == .grid {
+                                    SmartGridView(
+                                        items: gridItems,
+                                        onLaunch: { app in
+                                            if case .tag(let id) = selection {
+                                                appService.recordTagUsage(id: id)
+                                            }
+                                            appService.launch(app: app)
+                                        },
+                                        onUpdateSize: { app, size in
+                                            appService.setSize(size, for: app.id)
+                                        },
+                                        onToggleTag: { app, tag in
+                                            appService.toggleTag(tag, for: app.id)
+                                        },
+                                        onAddTag: {
+                                            let newTag = appService.addTag(name: "New Tag")
+                                            selection = .tag(newTag.id)
+                                            editingTagId = newTag.id
+                                            focusedField = newTag.id
+                                        },
+                                        onQuit: (selection == .openApps) ? { app in appService.quitApp(app: app) } : nil,
+                                        onHide: (selection == .openApps) ? { app in appService.hiddenAppBundleIDs.insert(app.id) } : nil,
+                                        onHoverApp: { name in hoveredAppName = name },
+                                        availableTags: appService.tags,
+                                        availableWidth: geometry.size.width,
+                                        focusedAppID: $focusedAppID
+                                    )
+                                    .environmentObject(appService)
+                                } else {
+                                    AppListView(
+                                        items: gridItems,
+                                        onLaunch: { app in
+                                            if case .tag(let id) = selection {
+                                                appService.recordTagUsage(id: id)
+                                            }
+                                            appService.launch(app: app)
+                                        },
+                                        onQuit: (selection == .openApps) ? { app in appService.quitApp(app: app) } : nil,
+                                        onHide: (selection == .openApps) ? { app in appService.hiddenAppBundleIDs.insert(app.id) } : nil,
+                                        availableTags: appService.tags,
+                                        iconSize: baseIconSize,
+                                        onToggleTag: { app, tag in appService.toggleTag(tag, for: app.id) },
+                                        onAddTag: {
+                                            let newTag = appService.addTag(name: "New Tag")
+                                            selection = .tag(newTag.id)
+                                            editingTagId = newTag.id
+                                            focusedField = newTag.id
+                                        },
+                                        onHoverApp: { name in hoveredAppName = name }
+                                    )
+                                }
                             }
                         }
                         .padding()
                         .offset(y: -12)
                         .frame(minHeight: geometry.size.height, alignment: .top)
+                        }
                     }
-                }
                     
                     // Status Bar
                     HStack {
@@ -245,8 +250,8 @@ struct ContentView: View {
                         
                         HStack(spacing: 8) {
                             Image(systemName: "minus.magnifyingglass")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
                             
                             Slider(value: $appService.iconScale, in: 0.7...3.0, step: 0.1)
                                 .frame(width: 100)
@@ -435,103 +440,20 @@ struct AppListView: View {
     let onAddTag: () -> Void
     let onHoverApp: (String?) -> Void
     
-    @State private var hoveredAppId: String? = nil
-    
     var body: some View {
         LazyVStack(spacing: 0) {
             ForEach(items) { app in
-                HStack(spacing: 12) {
-                    Image(nsImage: IconCache.shared.icon(for: app, size: iconSize))
-                        .resizable()
-                        .frame(width: iconSize, height: iconSize)
-                    
-                    Text(app.name)
-                        .font(.body)
-                        .foregroundColor(.primary)
-                    
-                    Spacer()
-                    
-                    // Show tags in list?
-                    if !app.tags.isEmpty {
-                        HStack(spacing: 4) {
-                            ForEach(availableTags.filter { app.tags.contains($0.id) }) { tag in
-                                Circle()
-                                    .fill(Color(hex: tag.colorHex ?? "#888888"))
-                                    .frame(width: 8, height: 8)
-                                    .help(tag.name)
-                            }
-                        }
-                    }
-                }
-                .padding(.vertical, 8)
-                .padding(.horizontal, 12)
-                .background(hoveredAppId == app.id ? Color.secondary.opacity(0.1) : Color.clear)
-                .cornerRadius(8)
-                .contentShape(Rectangle())
-                .onHover { isHovering in
-                    hoveredAppId = isHovering ? app.id : nil
-                    onHoverApp(isHovering ? app.name : nil)
-                }
-                .onTapGesture {
-                    onLaunch(app)
-                }
-                .contextMenu {
-                     if let onQuit = onQuit {
-                         Button(role: .destructive, action: { onQuit(app) }) {
-                             Label("Quit", systemImage: "xmark.circle")
-                         }
-                     } else {
-                         Button(action: { onLaunch(app) }) {
-                             Label("Open", systemImage: "arrow.up.forward.app")
-                         }
-                     }
-                     
-                     Button(action: {
-                         NSWorkspace.shared.activateFileViewerSelecting([app.url])
-                     }) {
-                         Label("Show in Finder", systemImage: "folder")
-                     }
-                     
-                     if let onHide = onHide {
-                          Button(action: { onHide(app) }) {
-                              Label("Hide \(app.name)", systemImage: "eye.slash")
-                          }
-                     }
-                     
-                     Divider()
-                     
-                     Menu {
-                         ForEach(availableTags) { tag in
-                             Button(action: { onToggleTag(app, tag) }) {
-                                 HStack {
-                                     Text(tag.name)
-                                     if app.tags.contains(tag.id) {
-                                         Image(systemName: "checkmark")
-                                     }
-                                 }
-                             }
-                         }
-                         Divider()
-                         Button("Add New Tag...") { onAddTag() }
-                     } label: {
-                         Label("Tags", systemImage: "tag")
-                     }
-                }
-                .draggable(app.url) {
-                    let size: CGFloat = 64
-                    let configuredIcon: NSImage = {
-                        let img = NSWorkspace.shared.icon(forFile: app.url.path)
-                        img.size = NSSize(width: size, height: size)
-                        return img
-                    }()
-                    
-                    Image(nsImage: configuredIcon)
-                        .resizable()
-                        .interpolation(.high)
-                        .antialiased(true)
-                        .aspectRatio(contentMode: .fit)
-                        .frame(width: size, height: size)
-                }
+                AppRowView(
+                    app: app,
+                    onLaunch: onLaunch,
+                    onQuit: onQuit,
+                    onHide: onHide,
+                    availableTags: availableTags,
+                    iconSize: iconSize,
+                    onToggleTag: onToggleTag,
+                    onAddTag: onAddTag,
+                    onHoverApp: onHoverApp
+                )
                 
                 Divider()
                     .padding(.leading, 56)
@@ -541,32 +463,115 @@ struct AppListView: View {
     }
 }
 
-extension Color {
-    init(hex: String) {
-        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
-        var int: UInt64 = 0
-        Scanner(string: hex).scanHexInt64(&int)
-        let a, r, g, b: UInt64
-        switch hex.count {
-        case 3: // RGB (12-bit)
-            (a, r, g, b) = (255, (int >> 8) * 17, (int >> 4 & 0xF) * 17, (int & 0xF) * 17)
-        case 6: // RGB (24-bit)
-            (a, r, g, b) = (255, int >> 16, int >> 8 & 0xFF, int & 0xFF)
-        case 8: // ARGB (32-bit)
-            (a, r, g, b) = (int >> 24, int >> 16 & 0xFF, int >> 8 & 0xFF, int & 0xFF)
-        default:
-            (a, r, g, b) = (1, 1, 1, 0)
+struct AppRowView: View {
+    let app: AppItem
+    let onLaunch: (AppItem) -> Void
+    let onQuit: ((AppItem) -> Void)?
+    let onHide: ((AppItem) -> Void)?
+    let availableTags: [AppTag]
+    let iconSize: CGFloat
+    let onToggleTag: (AppItem, AppTag) -> Void
+    let onAddTag: () -> Void
+    let onHoverApp: (String?) -> Void
+    
+    @State private var hoveredAppId: String? = nil
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(nsImage: IconCache.shared.icon(for: app, size: iconSize))
+                .resizable()
+                .frame(width: iconSize, height: iconSize)
+            
+            Text(app.name)
+                .font(.body)
+                .foregroundColor(.primary)
+            
+            Spacer()
+            
+            // Show tags in list?
+            if !app.tags.isEmpty {
+                HStack(spacing: 4) {
+                    ForEach(availableTags.filter { app.tags.contains($0.id) }) { tag in
+                        Circle()
+                            .fill(Color.fromHex(tag.colorHex ?? "#888888"))
+                            .frame(width: 8, height: 8)
+                            .help(tag.name)
+                    }
+                }
+            }
         }
-        
-        self.init(
-            .sRGB,
-            red: Double(r) / 255,
-            green: Double(g) / 255,
-            blue:  Double(b) / 255,
-            opacity: Double(a) / 255
-        )
+        .padding(.vertical, 8)
+        .padding(.horizontal, 12)
+        .background(hoveredAppId == app.id ? Color.secondary.opacity(0.1) : Color.clear)
+        .cornerRadius(8)
+        .contentShape(Rectangle())
+        .onHover { isHovering in
+            hoveredAppId = isHovering ? app.id : nil
+            onHoverApp(isHovering ? app.name : nil)
+        }
+        .onTapGesture {
+            onLaunch(app)
+        }
+        .contextMenu {
+             if let onQuit = onQuit {
+                 Button(role: .destructive, action: { onQuit(app) }) {
+                     Label("Quit", systemImage: "xmark.circle")
+                 }
+             } else {
+                 Button(action: { onLaunch(app) }) {
+                     Label("Open", systemImage: "arrow.up.forward.app")
+                 }
+             }
+             
+             Button(action: {
+                 NSWorkspace.shared.activateFileViewerSelecting([app.url])
+             }) {
+                 Label("Show in Finder", systemImage: "folder")
+             }
+             
+             if let onHide = onHide {
+                  Button(action: { onHide(app) }) {
+                      Label("Hide \(app.name)", systemImage: "eye.slash")
+                  }
+             }
+             
+             Divider()
+             
+             Menu {
+                 ForEach(availableTags) { tag in
+                     Button(action: { onToggleTag(app, tag) }) {
+                         HStack {
+                             Text(tag.name)
+                             if app.tags.contains(tag.id) {
+                                 Image(systemName: "checkmark")
+                             }
+                         }
+                     }
+                 }
+                 Divider()
+                 Button("Add New Tag...") { onAddTag() }
+             } label: {
+                 Label("Tags", systemImage: "tag")
+             }
+        }
+        .draggable(app.url) {
+            let size: CGFloat = 64
+            let configuredIcon: NSImage = {
+                let img = NSWorkspace.shared.icon(forFile: app.url.path)
+                img.size = NSSize(width: size, height: size)
+                return img
+            }()
+            
+            Image(nsImage: configuredIcon)
+                .resizable()
+                .interpolation(.high)
+                .antialiased(true)
+                .aspectRatio(contentMode: .fit)
+                .frame(width: size, height: size)
+        }
     }
 }
+
 
 struct SidebarView: View {
     @Binding var selection: SidebarSelection?
@@ -654,10 +659,10 @@ struct TagRow: View {
                     VStack(spacing: 3) {
                         Capsule()
                             .frame(width: 10, height: 1)
-                            .foregroundColor(Color(hex: "#635F5D"))
+                            .foregroundColor(Color.fromHex("#635F5D"))
                         Capsule()
                             .frame(width: 10, height: 1)
-                            .foregroundColor(Color(hex: "#635F5D"))
+                            .foregroundColor(Color.fromHex("#635F5D"))
                     }
                     .padding(.trailing, 4)
                 }
@@ -699,8 +704,6 @@ struct TagRow: View {
     }
 }
 
-import SwiftUI
-import AppKit
 
 struct NonTabTextField: NSViewRepresentable {
     var placeholder: String
