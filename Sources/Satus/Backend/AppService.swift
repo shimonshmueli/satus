@@ -2,6 +2,18 @@ import Foundation
 import AppKit
 import ServiceManagement
 
+enum DockItem: Codable, Identifiable, Hashable {
+    case app(id: String)
+    case group(id: UUID, items: [String])
+    
+    var id: String {
+        switch self {
+        case .app(let id): return id
+        case .group(let id, _): return id.uuidString
+        }
+    }
+}
+
 @MainActor
 class AppService: ObservableObject {
     @Published var apps: [AppItem] = []
@@ -47,6 +59,11 @@ class AppService: ObservableObject {
 
     @Published var lastShortcutTime: Date = .distantPast
     @Published var switcherTargetID: String? = nil // Robust tracking for Switcher
+    
+    // Dock Configuration
+    @Published var dockItems: [DockItem] = [] {
+        didSet { savePreferences() }
+    }
     
     var displayTags: [AppTag] {
         switch tagSortMode {
@@ -302,6 +319,76 @@ class AppService: ObservableObject {
         savePreferences()
     }
     
+    // MARK: - Dock Management
+    func moveDockItem(from source: IndexSet, to destination: Int) {
+        dockItems.move(fromOffsets: source, toOffset: destination)
+        savePreferences()
+    }
+    
+    func createDockGroup(with items: [String]) {
+        let group = DockItem.group(id: UUID(), items: items)
+        dockItems.append(group)
+        savePreferences()
+    }
+    
+    func groupDockItems(targetId: String, sourceId: String) {
+        guard let targetIndex = dockItems.firstIndex(where: { $0.id == targetId }),
+              let sourceIndex = dockItems.firstIndex(where: { $0.id == sourceId }) else { return }
+        
+        let targetItem = dockItems[targetIndex]
+        let sourceItem = dockItems[sourceIndex]
+        
+        var newGroupItems: [String] = []
+        
+        // Extract IDs
+        switch targetItem {
+        case .app(let id): newGroupItems.append(id)
+        case .group(_, let items): newGroupItems.append(contentsOf: items)
+        }
+        
+        switch sourceItem {
+        case .app(let id): newGroupItems.append(id)
+        case .group(_, let items): newGroupItems.append(contentsOf: items)
+        }
+        
+        let newGroup = DockItem.group(id: UUID(), items: newGroupItems)
+        
+        // Robust Removal & Insertion
+        // 1. Remove source
+        dockItems.remove(at: sourceIndex)
+        
+        // 2. Find new index of target (it might have shifted)
+        if let newTargetIndex = dockItems.firstIndex(where: { $0.id == targetId }) {
+            // Replace target with group
+            dockItems[newTargetIndex] = newGroup
+        } else {
+            // Fallback (Shouldn't happen)
+            dockItems.append(newGroup)
+        }
+        
+        savePreferences()
+    }
+    
+    func addAppToGroup(groupId: UUID, appId: String) {
+        guard let index = dockItems.firstIndex(where: {
+            if case .group(let id, _) = $0 { return id == groupId }
+            return false
+        }) else { return }
+        
+        if case .group(let id, var items) = dockItems[index] {
+            if !items.contains(appId) {
+                items.append(appId)
+                dockItems[index] = .group(id: id, items: items)
+                // Remove app from top level if it exists there
+                dockItems.removeAll { item in
+                    if case .app(let id) = item { return id == appId }
+                    return false
+                }
+                savePreferences()
+            }
+        }
+    }
+    
     // setHeroApp removed
 
     private var saveTask: Task<Void, Error>?
@@ -349,7 +436,7 @@ class AppService: ObservableObject {
         
         let tagSettings = tags.map { AppTagDTO(id: $0.id, name: $0.name, colorHex: $0.colorHex, items: $0.items, usageCount: $0.usageCount) }
         
-        return UserPreferences(tags: tagSettings, appSettings: appSettings, iconScale: iconScale, appTheme: appTheme, viewMode: viewMode, shortcutMapping: shortcutTagMapping, showOpenApps: showOpenApps, showUtilities: showUtilities, hiddenAppBundleIDs: Array(hiddenAppBundleIDs), sortTagsAlphabetically: nil, tagSortMode: tagSortMode, isDebugMode: isDebugMode)
+        return UserPreferences(tags: tagSettings, appSettings: appSettings, dockItems: dockItems, iconScale: iconScale, appTheme: appTheme, viewMode: viewMode, shortcutMapping: shortcutTagMapping, showOpenApps: showOpenApps, showUtilities: showUtilities, hiddenAppBundleIDs: Array(hiddenAppBundleIDs), sortTagsAlphabetically: nil, tagSortMode: tagSortMode, isDebugMode: isDebugMode)
     }
 
     func restorePreferences(_ prefs: UserPreferences) {
@@ -367,6 +454,11 @@ class AppService: ObservableObject {
             self.tagSortMode = legacySort ? .alphabetical : .manual
         }
         if let debug = prefs.isDebugMode { self.isDebugMode = debug }
+        
+        // Restore Dock
+        if let dock = prefs.dockItems {
+            self.dockItems = dock
+        }
         
         // Restore Tags
         self.tags = prefs.tags.map {
@@ -457,6 +549,7 @@ class AppService: ObservableObject {
     struct UserPreferences: Codable {
         let tags: [AppTagDTO]
         let appSettings: [AppItemDTO]
+        let dockItems: [DockItem]?
         let iconScale: Double?
 
         let appTheme: String?
@@ -474,6 +567,7 @@ class AppService: ObservableObject {
     
     struct ExportManifest: Codable {
         let tags: [AppTagDTO]
+        let dockItems: [DockItem]?
     }
     
     // MARK: - Export / Import
@@ -501,7 +595,7 @@ class AppService: ObservableObject {
              return AppTagDTO(id: tag.id, name: tag.name, colorHex: tag.colorHex, items: finalItems, usageCount: tag.usageCount)
         }
         
-        let manifest = ExportManifest(tags: tagSettings)
+        let manifest = ExportManifest(tags: tagSettings, dockItems: dockItems)
         
         do {
             let encoder = JSONEncoder()
@@ -544,6 +638,11 @@ class AppService: ObservableObject {
                          apps[index].tags.insert(tag.id)
                      }
                  }
+             }
+             
+             // Import Dock
+             if let dock = manifest.dockItems {
+                 self.dockItems = dock
              }
              
              objectWillChange.send()
@@ -600,6 +699,10 @@ class AppService: ObservableObject {
         }
         
         if let debug = prefs.isDebugMode { self.isDebugMode = debug }
+        
+        if let dock = prefs.dockItems {
+            self.dockItems = dock
+        }
 
                 
         

@@ -30,6 +30,7 @@ struct SmartGridView: View {
     let onUpdateSize: (AppItem, AppSize) -> Void
     let onToggleTag: (AppItem, AppTag) -> Void
     let onAddTag: () -> Void 
+    let onAddToDock: (AppItem) -> Void
     let onQuit: ((AppItem) -> Void)?
     let onHide: ((AppItem) -> Void)?
     let onHoverApp: (String?) -> Void
@@ -70,6 +71,7 @@ struct SmartGridView: View {
                                 onUpdateSize: onUpdateSize,
                                 onToggleTag: onToggleTag,
                                 onAddTag: onAddTag,
+                                onAddToDock: { onAddToDock(app) },
                                 onHoverApp: onHoverApp,
                                 availableTags: availableTags
                             )
@@ -128,7 +130,9 @@ struct AppIconView: View {
     let onUpdateSize: (AppItem, AppSize) -> Void
     let onToggleTag: (AppItem, AppTag) -> Void
 
+
     let onAddTag: () -> Void
+    let onAddToDock: () -> Void
     let onHoverApp: (String?) -> Void
     let availableTags: [AppTag]
     
@@ -189,6 +193,12 @@ struct AppIconView: View {
                 NSWorkspace.shared.activateFileViewerSelecting([app.url])
             }) {
                 Label("Show in Finder", systemImage: "folder")
+            }
+            
+            Divider()
+            
+            Button(action: { onAddToDock() }) {
+                Label("Add to Dock", systemImage: "slider.horizontal.3")
             }
             
             Divider()

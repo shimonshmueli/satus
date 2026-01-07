@@ -6,6 +6,7 @@ enum SidebarSelection: Hashable {
     case allApps
     case openApps
     case utilities
+    case dock
     case untagged
     case tag(UUID)
 }
@@ -55,6 +56,8 @@ struct ContentView: View {
             return appService.apps.filter { $0.tags.isEmpty }
         case .tag(let id):
             return appService.apps.filter { $0.tags.contains(id) }
+        case .dock:
+            return [] // DockView uses its own data source
         }
     }
     
@@ -158,6 +161,8 @@ struct ContentView: View {
                         ScrollView {
                             if selection == nil || selection == .allApps {
                                 // Header if needed?
+                            } else if selection == .dock {
+                                DockView()
                             } else if selection == .openApps {
                             } else if selection == .utilities {
                         } else if selection == .untagged {
@@ -193,6 +198,11 @@ struct ContentView: View {
                                             editingTagId = newTag.id
                                             focusedField = newTag.id
                                         },
+                                        onAddToDock: { app in
+                                            if !appService.dockItems.contains(where: { $0.id == app.id }) {
+                                                appService.dockItems.append(.app(id: app.id))
+                                            }
+                                        },
                                         onQuit: (selection == .openApps) ? { app in appService.quitApp(app: app) } : nil,
                                         onHide: (selection == .openApps) ? { app in appService.hiddenAppBundleIDs.insert(app.id) } : nil,
                                         onHoverApp: { name in hoveredAppName = name },
@@ -220,6 +230,11 @@ struct ContentView: View {
                                             selection = .tag(newTag.id)
                                             editingTagId = newTag.id
                                             focusedField = newTag.id
+                                        },
+                                        onAddToDock: { app in
+                                            if !appService.dockItems.contains(where: { $0.id == app.id }) {
+                                                appService.dockItems.append(.app(id: app.id))
+                                            }
                                         },
                                         onHoverApp: { name in hoveredAppName = name }
                                     )
@@ -438,6 +453,7 @@ struct AppListView: View {
     let onToggleTag: (AppItem, AppTag) -> Void
 
     let onAddTag: () -> Void
+    let onAddToDock: (AppItem) -> Void
     let onHoverApp: (String?) -> Void
     
     var body: some View {
@@ -452,6 +468,7 @@ struct AppListView: View {
                     iconSize: iconSize,
                     onToggleTag: onToggleTag,
                     onAddTag: onAddTag,
+                    onAddToDock: onAddToDock,
                     onHoverApp: onHoverApp
                 )
                 
@@ -472,6 +489,7 @@ struct AppRowView: View {
     let iconSize: CGFloat
     let onToggleTag: (AppItem, AppTag) -> Void
     let onAddTag: () -> Void
+    let onAddToDock: (AppItem) -> Void
     let onHoverApp: (String?) -> Void
     
     @State private var hoveredAppId: String? = nil
@@ -537,6 +555,12 @@ struct AppRowView: View {
              
              Divider()
              
+             Button(action: {
+                 onAddToDock(app)
+             }) {
+                Label("Add to Dock", systemImage: "slider.horizontal.3")
+             }
+             
              Menu {
                  ForEach(availableTags) { tag in
                      Button(action: { onToggleTag(app, tag) }) {
@@ -587,6 +611,9 @@ struct SidebarView: View {
             Section {
                 Label("All Apps", systemImage: "square.grid.2x2")
                     .tag(SidebarSelection.allApps)
+                
+                Label("Dock", systemImage: "slider.horizontal.3")
+                    .tag(SidebarSelection.dock)
                 
                 if appService.showOpenApps {
                     Label("Open Apps", systemImage: "macwindow")
