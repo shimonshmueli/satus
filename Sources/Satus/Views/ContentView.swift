@@ -55,6 +55,15 @@ struct ContentView: View {
         }
     }
     
+    @State private var window: NSWindow?
+
+    private func applyDebugConfiguration() {
+        guard let window = window, appService.isDebugMode else { return }
+        // Enforce 1280x800 at 80,80
+        let debugFrame = NSRect(x: 80, y: 80, width: 1280, height: 800)
+        window.setFrame(debugFrame, display: true, animate: true)
+    }
+
     var body: some View {
         NavigationSplitView {
             SidebarView(selection: $selection, editingTagId: $editingTagId, focusedField: $focusedField, isSidebarFocused: $isSidebarFocused)
@@ -259,6 +268,7 @@ struct ContentView: View {
     .environmentObject(appService)
     .background(
         WindowAccessor { window in
+             self.window = window
              // Ensure buttons hidden here too in case AppDelegate missed it?
              window.standardWindowButton(.closeButton)?.isHidden = true
              window.standardWindowButton(.miniaturizeButton)?.isHidden = true
@@ -266,8 +276,14 @@ struct ContentView: View {
              window.titlebarAppearsTransparent = true
              window.titleVisibility = .hidden
              // window.isMovableByWindowBackground = true // REMOVED to fix drag conflict
+             
+             // Initial Check
+             applyDebugConfiguration()
         }
     )
+    .onChange(of: appService.isDebugMode) { _, _ in
+        applyDebugConfiguration()
+    }
     .onAppear {
         // Monitor for Modifier Release (Release to Activate)
         NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { event in
@@ -631,11 +647,6 @@ struct TagRow: View {
                 }
             } else {
                 Text(tag.name)
-                if appService.isDebugMode {
-                    Text("(\(tag.usageCount))")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
                 Spacer()
                 
                 if appService.tagSortMode == .manual {

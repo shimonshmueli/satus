@@ -8,6 +8,8 @@
     <string>com.shimonshmueli.Satus</string>
     <key>CFBundleName</key>
     <string>Satus</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
@@ -22,5 +24,7 @@
     <string>NSApplication</string>
     <key>LSUIElement</key>
     <true/>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.utilities</string>
 </dict>
 </plist>
