@@ -125,8 +125,8 @@ struct SettingsView: View {
                     ShortcutRow(id: 3, label: "Utilities", appService: appService)
                         .padding(.leading, 15)
                     
-                    // Shortcut 4-5: Custom Tags
-                    ForEach(4...5, id: \.self) { id in
+                    // Shortcut 4-8: Custom Tags
+                    ForEach(4...8, id: \.self) { id in
                         CustomTagShortcutRow(id: id, appService: appService)
                     }
                 }
@@ -204,7 +204,7 @@ struct SettingsView: View {
             .keyboardShortcut(.defaultAction)
         }
         .padding()
-        .frame(width: 500)
+        .frame(width: 500, height: 750)
         .onAppear {
             takeSnapshot()
         }

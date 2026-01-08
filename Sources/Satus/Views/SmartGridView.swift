@@ -194,6 +194,20 @@ struct AppIconView: View {
             Divider()
             
             Menu {
+                // System Categories
+                let isUtility = app.url.path.contains("/Applications/Utilities")
+                Button(action: {}) {
+                    HStack {
+                        Text("Utilities")
+                        if isUtility {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+                .disabled(true) // Read-only
+                
+                Divider()
+                
                 ForEach(availableTags) { tag in
                     Button(action: { onToggleTag(app, tag) }) {
                         HStack {

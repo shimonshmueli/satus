@@ -104,7 +104,15 @@ class AppService: ObservableObject {
         if let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
             let appDir = appSupport.appendingPathComponent("AppLibrary")
             try? fileManager.createDirectory(at: appDir, withIntermediateDirectories: true)
+            try? fileManager.createDirectory(at: appDir, withIntermediateDirectories: true)
+            
+            // Debug / Dev Isolation
+            #if DEBUG
+            self.persistenceURL = appDir.appendingPathComponent("user_prefs_dev.json")
+            print("🔧 Using DEV persistence: user_prefs_dev.json")
+            #else
             self.persistenceURL = appDir.appendingPathComponent("user_prefs_v2.json")
+            #endif
         } else {
             self.persistenceURL = nil
         }
@@ -222,8 +230,23 @@ class AppService: ObservableObject {
         if self.tags.isEmpty {
             self.tags = [
                 AppTag(name: "Productivity"),
-                AppTag(name: "Media")
+                AppTag(name: "Media"),
+                AppTag(name: "Tools")
             ]
+        }
+        
+        // Populate default shortcuts if empty (IDs 4, 5, 6 up to 8 available)
+        // Default: 4->Productivity, 5->Media, 6->Tools
+        if self.shortcutTagMapping.isEmpty {
+            if let prod = tags.first(where: { $0.name == "Productivity" }) {
+                shortcutTagMapping[4] = prod.id
+            }
+            if let media = tags.first(where: { $0.name == "Media" }) {
+                shortcutTagMapping[5] = media.id
+            }
+            if let tools = tags.first(where: { $0.name == "Tools" }) {
+                shortcutTagMapping[6] = tools.id
+            }
         }
     }
     

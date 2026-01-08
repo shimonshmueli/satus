@@ -96,7 +96,7 @@ struct ContentView: View {
                         Image(systemName: "magnifyingglass")
                             .foregroundColor(.secondary)
                             .frame(height: 28)
-                        NonTabTextField(placeholder: "Search Apps...", text: $searchText)
+                        NonTabTextField(placeholder: "Search All Apps...", text: $searchText)
                             .frame(height: 28)
                             // .focused($isSearchFocused) // Not needed as focus is controlled by focusing other elements
                             .onAppear {
@@ -538,6 +538,20 @@ struct AppRowView: View {
              Divider()
              
              Menu {
+                 // System Categories
+                 let isUtility = app.url.path.contains("/Applications/Utilities")
+                 Button(action: {}) {
+                     HStack {
+                         Text("Utilities")
+                         if isUtility {
+                             Image(systemName: "checkmark")
+                         }
+                     }
+                 }
+                 .disabled(true) // Read-only
+                 
+                 Divider()
+                 
                  ForEach(availableTags) { tag in
                      Button(action: { onToggleTag(app, tag) }) {
                          HStack {
