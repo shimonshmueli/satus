@@ -300,6 +300,12 @@ struct ContentView: View {
                     }
                     return event
                 case 53: // Escape
+                    if let keyWindow = NSApplication.shared.keyWindow {
+                         if keyWindow.title == "Satus Help" || keyWindow.title.starts(with: "About ") {
+                             keyWindow.close()
+                             return nil
+                         }
+                    }
                     NSApplication.shared.hide(nil)
                     return nil
                 case 123: // Left

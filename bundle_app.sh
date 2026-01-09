@@ -59,6 +59,12 @@ cp ".build/$BUILD_MODE/Satus" "$APP_NAME/Contents/MacOS/Satus"
 echo "Copying and Updating Info.plist..."
 cp Sources/Satus/Info.plist "$APP_NAME/Contents/Info.plist"
 
+# 4.1 Copy App Icon
+if [ -f "Sources/Satus/Resources/AppIcon.icns" ]; then
+    echo "Copying App Icon..."
+    cp "Sources/Satus/Resources/AppIcon.icns" "$APP_NAME/Contents/Resources/AppIcon.icns"
+fi
+
 if [[ -n "$BUNDLE_ID_SUFFIX" ]]; then
     # Update Bundle ID for isolation (Requires plutil)
     ORIGINAL_ID=$(defaults read "$(pwd)/Sources/Satus/Info.plist" CFBundleIdentifier)

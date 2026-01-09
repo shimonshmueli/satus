@@ -61,6 +61,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self.setupMinimalMenu()
         }
     }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        // Ensure menu is persisted/restored when coming to foreground
+        setupMinimalMenu()
+    }
+    
+    func applicationDidResignActive(_ notification: Notification) {
+        // Close Help Window
+        if let hw = helpWindow {
+            hw.close()
+            // We don't necessarily need to nil it if isReleasedWhenClosed is false,
+            // but closing it is enough to hide it.
+        }
+        
+        // Close About Panel (Standard About Panel usually has title "About <AppName>")
+        // Iterating windows to find it.
+        for window in NSApplication.shared.windows {
+            if window.title.starts(with: "About ") {
+                window.close()
+            }
+        }
+    }
     
     func setupMinimalMenu() {
         let mainMenu = NSMenu()
