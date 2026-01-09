@@ -1,17 +1,39 @@
 #!/bin/bash
 set -e
 
-# Default to DEBUG mode
+# Defaults
 BUILD_MODE="debug"
 BUNDLE_ID_SUFFIX=".dev"
+DO_CLEAN=false
 
-# Check for --release flag
-if [[ "$1" == "--release" ]]; then
-    BUILD_MODE="release"
-    BUNDLE_ID_SUFFIX=""
-    echo "📣 Switching to RELEASE mode"
-else
+# 0. Parse Arguments
+for arg in "$@"
+do
+    case $arg in
+        --release)
+            BUILD_MODE="release"
+            BUNDLE_ID_SUFFIX=""
+            echo "📣 Switching to RELEASE mode"
+            ;;
+        --clean|--virgin)
+            DO_CLEAN=true
+            echo "🧹 Virgin Mode enabled: Cleaning local data..."
+            ;;
+    esac
+done
+
+if [[ "$BUILD_MODE" == "debug" ]]; then
     echo "🔧 Defaulting to DEBUG mode (Use --release for production)"
+fi
+    
+# 0.1 Clean if requested
+if [ "$DO_CLEAN" = true ]; then
+    echo "💥 Resetting to VIRGIN STATE..."
+    rm -f ~/Library/Application\ Support/AppLibrary/user_prefs_dev.json
+    rm -f ~/Library/Application\ Support/AppLibrary/user_prefs_v2.json
+    # com.shimonshmueli.Satus
+    defaults delete com.shimonshmueli.Satus 2>/dev/null || echo "   (No defaults found for com.shimonshmueli.Satus)"
+    echo "✅ Clean complete."
 fi
 
 # 0. Quit Existing App

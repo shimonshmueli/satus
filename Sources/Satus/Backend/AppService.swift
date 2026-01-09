@@ -8,7 +8,7 @@ class AppService: ObservableObject {
     @Published var tags: [AppTag] = []
     
     // Sizing
-    @Published var iconScale: Double = 1.0 {
+    @Published var iconScale: Double = 1.5 {
         didSet { savePreferences() }
     }
     @Published var dockTileSize: Int = 64 // Default fallback
@@ -65,7 +65,15 @@ class AppService: ObservableObject {
     }
     
     // Focus State for Navigation
-    @Published var isSidebarFocused: Bool = false
+    enum FocusZone {
+        case sidebar
+        case grid
+    }
+    
+    @Published var activeFocusZone: FocusZone = .sidebar
+    @Published var sidebarSelection: SidebarSelection? = .allApps
+    @Published var focusedAppID: String? = nil // For grid navigation
+    @Published var isSidebarFocused: Bool = true // Computed/Synced with activeFocusZone? No, let's replace this.
     
     // Dock Visibility
     @Published var showInDock: Bool = false {
@@ -121,8 +129,15 @@ class AppService: ObservableObject {
         readDockTileSize()
         checkDockPersistence()
         loadApps()
-        // setupObservers()
+        setupObservers()
+        
+        // Enforce clean start state
+        self.activeFocusZone = .sidebar
+        self.sidebarSelection = .allApps
+        self.focusedAppID = nil
     }
+    
+    private var dockSizeTimer: Timer?
     
     private func setupObservers() {
         let center = NSWorkspace.shared.notificationCenter
@@ -135,6 +150,20 @@ class AppService: ObservableObject {
              DispatchQueue.main.async {
                  self?.objectWillChange.send()
              }
+        }
+        
+        // Update Dock Size on Terminate
+        NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in
+                self?.readDockTileSize()
+            }
+        }
+        
+        // Periodic Update
+        dockSizeTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.readDockTileSize()
+            }
         }
     }
     
@@ -153,8 +182,7 @@ class AppService: ObservableObject {
                let size = Int(output) {
                 // If the user's dock is tiny (e.g. 35), we might want a minimum sanity check?
                 // User asked for default to be SAME as dock.
-                // UPDATED: User asked for default to be 1.5x Dock.
-                self.dockTileSize = Int(Double(size) * 1.5)
+                self.dockTileSize = size
             }
         } catch {
             print("Failed to read dock size: \(error)")
@@ -244,9 +272,20 @@ class AppService: ObservableObject {
             if let media = tags.first(where: { $0.name == "Media" }) {
                 shortcutTagMapping[5] = media.id
             }
-            if let tools = tags.first(where: { $0.name == "Tools" }) {
-                shortcutTagMapping[6] = tools.id
+            if let media = tags.first(where: { $0.name == "Media" }) {
+                shortcutTagMapping[5] = media.id
             }
+            if let tools = tags.first(where: { $0.name == "Tools" }) {
+                shortcutTagMapping[7] = tools.id
+            }
+        }
+        
+        // Pre-populate App Switcher (ID: 6) with Option+Tab (KeyCode 48) if missing or invalid
+        let currentSwitcher = GlobalHotkey.shared.getShortcut(id: 6)
+        
+        if currentSwitcher == nil || currentSwitcher?.keyCode == 0 {
+            print("Pre-populating App Switcher shortcut to Option+Tab (Default)")
+            GlobalHotkey.shared.setShortcut(id: 6, keyCode: 48, modifiers: Int(NSEvent.ModifierFlags.option.rawValue))
         }
     }
     
@@ -454,13 +493,184 @@ class AppService: ObservableObject {
         case navigate(SidebarSelection)
         case appSwitcher
     }
+    
+    var appSwitcherShortcutFormatted: String? {
+        guard viewMode == .grid else { return nil }
+        return GlobalHotkey.shared.getShortcutString(id: 6)
+    }
+
+    // MARK: - Navigation & Filtering
+    
+    var currentGridApps: [AppItem] {
+        // 1. Text Search
+        // Note: We need searchText to be in AppService to filter here?
+        // Let's rely on the caller/view to handle search for now? 
+        // OR move searchText to AppService.
+        // For Arrow Navigation to work, AppService needs the TRUTH.
+        // Ideally, searchText should be in AppService.
+        return getGridApps(searchText: searchText)
+    }
+    
+    @Published var searchText: String = ""
+    
+    func getGridApps(searchText: String) -> [AppItem] {
+        if !searchText.isEmpty {
+            return apps.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+        }
+        
+        guard let sel = sidebarSelection else { return apps }
+        
+        switch sel {
+        case .allApps:
+            return apps
+        case .openApps:
+            return runningApps
+        case .utilities:
+            return apps.filter {
+                if $0.category == "public.app-category.utilities" { return true }
+                if let path = $0.url.path.removingPercentEncoding {
+                    return path.hasPrefix("/Applications/Utilities") || path.hasPrefix("/System/Applications/Utilities")
+                }
+                return false
+            }
+        case .untagged:
+            return apps.filter { $0.tags.isEmpty }
+        case .tag(let tagId):
+            if let tag = tags.first(where: { $0.id == tagId }) {
+                return getItemsForTag(tag)
+            }
+            return []
+        }
+    }
+    
+    enum ArrowDirection {
+        case up, down, left, right
+    }
+    
+    func handleArrowKey(_ direction: ArrowDirection) {
+        if activeFocusZone == .sidebar {
+            navigateSidebar(direction)
+        } else {
+            navigateGrid(direction)
+        }
+    }
+    
+    private func navigateSidebar(_ direction: ArrowDirection) {
+        // List of sidebar items in order
+        var items: [SidebarSelection] = [.allApps]
+        if showOpenApps { items.append(.openApps) }
+        if showUtilities { items.append(.utilities) }
+        
+        // Tags
+        let sortedTags = displayTags
+        items.append(contentsOf: sortedTags.map { .tag($0.id) })
+        
+        // Untagged
+        items.append(.untagged)
+        
+        guard let current = sidebarSelection,
+              let idx = items.firstIndex(of: current) else {
+            sidebarSelection = .allApps
+            return
+        }
+        
+        switch direction {
+        case .up:
+            let newIdx = max(0, idx - 1)
+            sidebarSelection = items[newIdx]
+        case .down:
+            let newIdx = min(items.count - 1, idx + 1)
+            sidebarSelection = items[newIdx]
+        case .right:
+            // Switch to Grid
+            activeFocusZone = .grid
+            // Select first app if nothing selected
+            if focusedAppID == nil {
+                focusedAppID = getGridApps(searchText: searchText).first?.id
+            }
+        case .left:
+            break // Stay in sidebar
+        }
+    }
+    
+    @Published var contentWidth: CGFloat = 800
+    
+    // Derived icon size for column calc
+    var effectiveIconSize: CGFloat {
+        CGFloat(Double(dockTileSize) * iconScale)
+    }
+
+    private func navigateGrid(_ direction: ArrowDirection) {
+        let apps = getGridApps(searchText: searchText)
+        guard !apps.isEmpty else { return }
+        
+        // Ensure focusedAppID is valid or default to first
+        let currentIdx = apps.firstIndex(where: { $0.id == focusedAppID }) ?? 0
+        if focusedAppID == nil { focusedAppID = apps[currentIdx].id }
+        
+        let isListMode = (viewMode == .list)
+        
+        // Calculate Columns
+        // Smart Grid: adaptive(min: effectiveIconSize)
+        // Item Width = effectiveIconSize + padding (approx 40)
+        // This must match SmartGridView calculation
+        let itemWidth = effectiveIconSize + 40
+        // Use a safe width (prevent 0 or too small)
+        let safeWidth = max(contentWidth, 300)
+        let columns = isListMode ? 1 : max(1, Int(safeWidth / itemWidth))
+        
+        switch direction {
+        case .left:
+            if isListMode {
+                // List Mode: Left = Up in List
+                if currentIdx == 0 {
+                    activeFocusZone = .sidebar
+                    focusedAppID = nil
+                } else {
+                    let newIdx = max(0, currentIdx - 1)
+                    focusedAppID = apps[newIdx].id
+                }
+            } else {
+                // Grid Mode: Visual Left
+                // If at Left Edge -> Sidebar ? NO, User requested to Disable this.
+                if currentIdx % columns == 0 {
+                    // Navigate to Sidebar
+                    activeFocusZone = .sidebar
+                    focusedAppID = nil
+                } else {
+                    let newIdx = max(0, currentIdx - 1)
+                    focusedAppID = apps[newIdx].id
+                }
+            }
+        case .right:
+            // "then on without round robin"
+            // List: Right = Down (Index + 1)
+            // Grid: Right = Index + 1
+            let newIdx = min(apps.count - 1, currentIdx + 1)
+            focusedAppID = apps[newIdx].id
+            
+        case .up:
+            // Grid: Index - columns
+            // List: Index - 1
+            let stride = isListMode ? 1 : columns
+            let newIdx = max(0, currentIdx - stride)
+            focusedAppID = apps[newIdx].id
+            
+        case .down:
+            // Grid: Index + columns
+            // List: Index + 1
+            let stride = isListMode ? 1 : columns
+            let newIdx = min(apps.count - 1, currentIdx + stride)
+            focusedAppID = apps[newIdx].id
+        }
+    }
+
 
     func handleShortcut(id: Int) -> ShortcutAction? {
         switch id {
         case 1:
             return .navigate(.allApps)
         case 2:
-            // Just navigate to Open Apps view
             return showOpenApps ? .navigate(.openApps) : .navigate(.allApps)
         case 3:
             return showUtilities ? .navigate(.utilities) : .navigate(.allApps)

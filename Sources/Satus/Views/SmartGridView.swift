@@ -38,7 +38,7 @@ struct SmartGridView: View {
     
     @EnvironmentObject var appService: AppService
     
-    @FocusState.Binding var focusedAppID: String?
+    @Binding var focusedAppID: String?
     
     // Computed props for sizes
     var baseSize: CGFloat {
@@ -74,9 +74,9 @@ struct SmartGridView: View {
                                 availableTags: availableTags
                             )
                             .id(app.id)
-                            .focusable()
-                            .focusEffectDisabled(true)
-                            .focused($focusedAppID, equals: app.id)
+                            .id(app.id)
+                            //.focusable() // Manual handling
+                            //.focused($focusedAppID, equals: app.id) // Manual handling
                             .accessibilityLabel(app.name)
                             .onTapGesture {
                                 onLaunch(app)

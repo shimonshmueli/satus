@@ -125,8 +125,8 @@ struct SettingsView: View {
                     ShortcutRow(id: 3, label: "Utilities", appService: appService)
                         .padding(.leading, 15)
                     
-                    // Shortcut 4-8: Custom Tags
-                    ForEach(4...8, id: \.self) { id in
+                    // Shortcut 4-9: Custom Tags (Skipping 6 as it is App Switcher)
+                    ForEach([4, 5, 7, 8, 9], id: \.self) { id in
                         CustomTagShortcutRow(id: id, appService: appService)
                     }
                 }

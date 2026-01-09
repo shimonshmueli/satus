@@ -1,32 +1,20 @@
 import SwiftUI
 import AppKit
 
-
-enum SidebarSelection: Hashable {
-    case allApps
-    case openApps
-    case utilities
-    case untagged
-    case tag(UUID)
-}
-
-
-
 struct ContentView: View {
     @StateObject var appService = AppService()
-    
+
     // Derived from settings - simplified for List/Grid sharing if needed
     var baseIconSize: CGFloat {
         CGFloat(Double(appService.dockTileSize) * appService.iconScale)
     }
     
-    @State private var searchText = ""
-    @State private var selection: SidebarSelection? = .allApps
+    // searchText moved to appService
+    // selection moved to appService
     @State private var showSettings = false
     @State private var editingTagId: UUID?
 
     @FocusState private var focusedField: UUID?
-    @FocusState private var focusedAppID: String?
     @State private var hoveredAppName: String?
     // removed local isShortcutTriggered
     
@@ -36,27 +24,7 @@ struct ContentView: View {
     
 
     
-    var gridItems: [AppItem] {
-        if !searchText.isEmpty {
-            return appService.apps.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
-        }
-        
-        switch selection {
-        case .allApps, .none:
-            return appService.apps
-        case .openApps:
-            return appService.runningApps
-        case .utilities:
-            return appService.apps.filter { 
-                let path = $0.url.path
-                return path.hasPrefix("/Applications/Utilities") || path.hasPrefix("/System/Applications/Utilities")
-            }
-        case .untagged:
-            return appService.apps.filter { $0.tags.isEmpty }
-        case .tag(let id):
-            return appService.apps.filter { $0.tags.contains(id) }
-        }
-    }
+    // gridItems logic moved to AppService.currentGridApps
     
 
     
@@ -72,7 +40,12 @@ struct ContentView: View {
 
     var body: some View {
         NavigationSplitView {
-            SidebarView(selection: $selection, editingTagId: $editingTagId, focusedField: $focusedField, isSidebarFocused: $isSidebarFocused)
+            SidebarView(
+                    selection: $appService.sidebarSelection,
+                    editingTagId: $editingTagId,
+                    focusedField: $focusedField,
+                    isSidebarFocused: $isSidebarFocused
+                )
             .navigationSplitViewColumnWidth(min: 200, ideal: 220)
             .background(VisualEffectView(material: .sidebar, blendingMode: .behindWindow))
             .background(WindowDragger()) // Make sidebar background draggable
@@ -96,7 +69,7 @@ struct ContentView: View {
                         Image(systemName: "magnifyingglass")
                             .foregroundColor(.secondary)
                             .frame(height: 28)
-                        NonTabTextField(placeholder: "Search All Apps...", text: $searchText)
+                        NonTabTextField(placeholder: "Search All Apps...", text: $appService.searchText)
                             .frame(height: 28)
                             // .focused($isSearchFocused) // Not needed as focus is controlled by focusing other elements
                             .onAppear {
@@ -117,6 +90,11 @@ struct ContentView: View {
                                         print("Manual Activation - Focusing Sidebar (All Apps)")
                                         isSearchFocused = false
                                         isSidebarFocused = true
+                                        appService.activeFocusZone = .sidebar
+                                        appService.focusedAppID = nil // Explicitly clear grid focus
+                                        if appService.sidebarSelection == nil {
+                                            appService.sidebarSelection = .allApps
+                                        }
                                     }
                                 }
                             }
@@ -156,11 +134,11 @@ struct ContentView: View {
                     
                     GeometryReader { geometry in
                         ScrollView {
-                            if selection == nil || selection == .allApps {
+                            if appService.sidebarSelection == nil || appService.sidebarSelection == .allApps {
                                 // Header if needed?
-                            } else if selection == .openApps {
-                            } else if selection == .utilities {
-                        } else if selection == .untagged {
+                            } else if appService.sidebarSelection == .openApps {
+                            } else if appService.sidebarSelection == .utilities {
+                        } else if appService.sidebarSelection == .untagged {
                            HStack {
                                 Text("Untagged Apps")
                                     .font(.headline)
@@ -174,9 +152,9 @@ struct ContentView: View {
                             Group {
                                 if appService.viewMode == .grid {
                                     SmartGridView(
-                                        items: gridItems,
+                                        items: appService.currentGridApps,
                                         onLaunch: { app in
-                                            if case .tag(let id) = selection {
+                                            if case .tag(let id) = appService.sidebarSelection {
                                                 appService.recordTagUsage(id: id)
                                             }
                                             appService.launch(app: app)
@@ -189,39 +167,40 @@ struct ContentView: View {
                                         },
                                         onAddTag: {
                                             let newTag = appService.addTag(name: "New Tag")
-                                            selection = .tag(newTag.id)
+                                            appService.sidebarSelection = .tag(newTag.id)
                                             editingTagId = newTag.id
                                             focusedField = newTag.id
                                         },
-                                        onQuit: (selection == .openApps) ? { app in appService.quitApp(app: app) } : nil,
-                                        onHide: (selection == .openApps) ? { app in appService.hiddenAppBundleIDs.insert(app.id) } : nil,
+                                        onQuit: (appService.sidebarSelection == .openApps) ? { app in appService.quitApp(app: app) } : nil,
+                                        onHide: (appService.sidebarSelection == .openApps) ? { app in appService.hiddenAppBundleIDs.insert(app.id) } : nil,
                                         onHoverApp: { name in hoveredAppName = name },
                                         availableTags: appService.tags,
                                         availableWidth: geometry.size.width,
-                                        focusedAppID: $focusedAppID
+                                        focusedAppID: $appService.focusedAppID
                                     )
                                     .environmentObject(appService)
                                 } else {
                                     AppListView(
-                                        items: gridItems,
+                                        items: appService.currentGridApps,
                                         onLaunch: { app in
-                                            if case .tag(let id) = selection {
+                                            if case .tag(let id) = appService.sidebarSelection {
                                                 appService.recordTagUsage(id: id)
                                             }
                                             appService.launch(app: app)
                                         },
-                                        onQuit: (selection == .openApps) ? { app in appService.quitApp(app: app) } : nil,
-                                        onHide: (selection == .openApps) ? { app in appService.hiddenAppBundleIDs.insert(app.id) } : nil,
+                                        onQuit: (appService.sidebarSelection == .openApps) ? { app in appService.quitApp(app: app) } : nil,
+                                        onHide: (appService.sidebarSelection == .openApps) ? { app in appService.hiddenAppBundleIDs.insert(app.id) } : nil,
                                         availableTags: appService.tags,
                                         iconSize: baseIconSize,
                                         onToggleTag: { app, tag in appService.toggleTag(tag, for: app.id) },
                                         onAddTag: {
                                             let newTag = appService.addTag(name: "New Tag")
-                                            selection = .tag(newTag.id)
+                                            appService.sidebarSelection = .tag(newTag.id)
                                             editingTagId = newTag.id
                                             focusedField = newTag.id
                                         },
-                                        onHoverApp: { name in hoveredAppName = name }
+                                        onHoverApp: { name in hoveredAppName = name },
+                                        focusedAppID: $appService.focusedAppID
                                     )
                                 }
                             }
@@ -229,14 +208,24 @@ struct ContentView: View {
                         .padding()
                         .offset(y: -12)
                         .frame(minHeight: geometry.size.height, alignment: .top)
+                        .frame(minWidth: 200) // Prevent width collapse
+                        }
+                        .onChange(of: geometry.size.width) { _, newValue in
+                            if newValue > 100 {
+                                appService.contentWidth = newValue
+                            }
+                        }
+                        .onAppear {
+                            appService.contentWidth = geometry.size.width
                         }
                     }
                     
                     // Status Bar
                     HStack {
-                        Text("\(gridItems.count) items")
+                        Text("\(appService.currentGridApps.count) items")
                             .font(.caption)
                             .foregroundColor(.secondary)
+                            .padding(.leading, 50)
                         
                         Spacer()
                         
@@ -248,29 +237,89 @@ struct ContentView: View {
                         
                         Spacer()
                         
-                        HStack(spacing: 8) {
-                            Image(systemName: "minus.magnifyingglass")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                        HStack(spacing: 12) {
+                            Button(action: {
+                                appService.iconScale = max(1.0, appService.iconScale - 0.5)
+                            }) {
+                                Image(systemName: "square")
+                                    .font(.caption2) // Small square
+                                    .foregroundColor(.secondary)
+                            }
+                            .buttonStyle(.plain)
                             
-                            Slider(value: $appService.iconScale, in: 0.7...3.0, step: 0.1)
-                                .frame(width: 100)
-                                .controlSize(.mini)
+                            Slider(value: $appService.iconScale, in: 1.0...3.0, step: 0.5)
+                                .frame(width: 120)
+                                .controlSize(.small)
                             
-                            Image(systemName: "plus.magnifyingglass")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                            Button(action: {
+                                appService.iconScale = min(3.0, appService.iconScale + 0.5)
+                            }) {
+                                Image(systemName: "square")
+                                    .font(.title3) // Larger square
+                                    .foregroundColor(.secondary)
+                            }
+                            .buttonStyle(.plain)
                         }
+                        .padding(.trailing, 40) // Move slider left by 20px (from 20 to 40)
                     }
                     .padding(.horizontal)
-                    .padding(.vertical, 8)
-                    .background(VisualEffectView(material: .titlebar, blendingMode: .behindWindow))
+                    .padding(.vertical, 10) // Symmetric padding for vertical centering, increased height
+                    .background(VisualEffectView(material: .sidebar, blendingMode: .behindWindow))
                     .overlay(Rectangle().frame(height: 1).foregroundColor(Color.gray.opacity(0.2)), alignment: .top)
                 }
             }
         }
-    .preferredColorScheme(appService.appTheme == "dark" ? .dark : (appService.appTheme == "light" ? .light : nil))
-    .environmentObject(appService)
+
+        // Global Keyboard Event Handling
+        .onAppear {
+            // Force Sidebar Focus on Launch
+            if appService.sidebarSelection == nil {
+                appService.sidebarSelection = .allApps
+            }
+            // Ensure focus state matches
+            isSidebarFocused = true
+            appService.activeFocusZone = .sidebar
+            
+            NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+                // Avoid hijacking Search Bar (NSTextView is the field editor)
+                if let window = NSApp.keyWindow,
+                   let responder = window.firstResponder as? NSTextView {
+                    return event
+                }
+                
+                let key = event.keyCode
+                switch key {
+                case 36: // Return
+                    let targetID = appService.focusedAppID ?? appService.switcherTargetID
+                    // Use apps list that matches current view context if possible, or search globally if ID is known.
+                    // safely finding the app object:
+                    if let id = targetID, 
+                       let app = appService.apps.first(where: { $0.id == id }) {
+                        appService.launch(app: app)
+                        return nil
+                    }
+                    return event
+                case 53: // Escape
+                    NSApplication.shared.hide(nil)
+                    return nil
+                case 123: // Left
+                    appService.handleArrowKey(.left)
+                    return nil 
+                case 124: // Right
+                    appService.handleArrowKey(.right)
+                    return nil
+                case 125: // Down
+                    appService.handleArrowKey(.down)
+                    return nil
+                case 126: // Up
+                    appService.handleArrowKey(.up)
+                    return nil
+                default:
+                    return event
+                }
+            }
+        }
+        .environmentObject(appService) // Only one instance at end
     .background(
         WindowAccessor { window in
              self.window = window
@@ -293,7 +342,7 @@ struct ContentView: View {
         // Monitor for Modifier Release (Release to Activate)
         NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { event in
             // Only act if we are in App Switcher mode
-            guard selection == .openApps,
+            guard appService.sidebarSelection == .openApps,
                   let targetID = appService.switcherTargetID,
                   let app = appService.runningApps.first(where: { $0.id == targetID }) else {
                 return event
@@ -349,35 +398,35 @@ struct ContentView: View {
                     isSidebarFocused = false
                     isSearchFocused = false
                     
-                    if selection == .openApps {
+                    if appService.sidebarSelection == .openApps {
                         // Already on Open Apps view: CYCLE FOCUS
                         let openApps = appService.runningApps
                         
                         // Use persistent target if UI focus is lost
-                        let currentID = focusedAppID ?? appService.switcherTargetID
+                        let currentID = appService.focusedAppID ?? appService.switcherTargetID
                         
                         if let currentID = currentID, let idx = openApps.firstIndex(where: { $0.id == currentID }) {
                             // Move to next
                             let nextIdx = (idx + 1) % openApps.count
                             let nextID = openApps[nextIdx].id
                             
-                            focusedAppID = nextID
+                            appService.focusedAppID = nextID
                             appService.switcherTargetID = nextID
                         } else {
                             // No focus found? Start at first
                             if let firstID = openApps.first?.id {
-                                focusedAppID = firstID
+                                appService.focusedAppID = firstID
                                 appService.switcherTargetID = firstID
                             }
                         }
                     } else {
                         // Not on Open Apps view: SWITCH & INITIAL FOCUS
-                        selection = .openApps
+                        appService.sidebarSelection = .openApps
                         
                         // Delay to allow view transition to complete
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
                             if let firstID = appService.runningApps.first?.id {
-                                focusedAppID = firstID
+                                appService.focusedAppID = firstID
                                 appService.switcherTargetID = firstID
                             }
                         }
@@ -387,42 +436,47 @@ struct ContentView: View {
                     // Standard Behavior for other views (Sidebar Highlight)
                     isSearchFocused = false
                     isSidebarFocused = true
-                    selection = targetSelection
+                    appService.sidebarSelection = targetSelection
                 }
             }
         }
     }
     .onKeyPress(.escape) {
-        // Lite App Switcher: ESC launches the app if in Open Apps and focused
-        let targetID = focusedAppID ?? appService.switcherTargetID
-        if selection == .openApps, let id = targetID, let app = appService.runningApps.first(where: { $0.id == id }) {
-            appService.launch(app: app)
-            return .handled
-        }
-        
         NSApplication.shared.hide(nil)
         return .handled
     }
-    .onChange(of: selection) { oldValue, newValue in
+    .onChange(of: appService.activeFocusZone) { _, newZone in
+        if newZone == .sidebar {
+            isSidebarFocused = true
+            appService.focusedAppID = nil // Clear grid focus
+        } else {
+            isSidebarFocused = false
+        }
+    }
+    .onChange(of: appService.sidebarSelection) { oldValue, newValue in
         if newValue != .openApps {
-            focusedAppID = nil
+            appService.focusedAppID = nil
             appService.switcherTargetID = nil
         }
     }
     .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
         // print("DEBUG: Resigning Active") // Monitor if this fires during shortcut
         showSettings = false
-        searchText = "" // Clear search when hidden
+        appService.searchText = "" // Clear search when hidden
         
         // Reset to All Apps on hide to avoid visual jump on next appear
-        selection = .allApps
+        appService.sidebarSelection = .allApps
         
         // Reset focus states
         isSidebarFocused = false
         isSearchFocused = false
+        
+        // Explicitly clear grid focus
+        appService.activeFocusZone = .sidebar
+        appService.focusedAppID = nil 
     }
+    .preferredColorScheme(appService.appTheme == "dark" ? .dark : (appService.appTheme == "light" ? .light : nil))
     }
-}
 
 
 
@@ -440,24 +494,44 @@ struct AppListView: View {
     let onAddTag: () -> Void
     let onHoverApp: (String?) -> Void
     
+    @Binding var focusedAppID: String?
+    
     var body: some View {
-        LazyVStack(spacing: 0) {
-            ForEach(items) { app in
-                AppRowView(
-                    app: app,
-                    onLaunch: onLaunch,
-                    onQuit: onQuit,
-                    onHide: onHide,
-                    availableTags: availableTags,
-                    iconSize: iconSize,
-                    onToggleTag: onToggleTag,
-                    onAddTag: onAddTag,
-                    onHoverApp: onHoverApp
-                )
-                
-                Divider()
-                    .padding(.leading, 56)
-                    .opacity(0.5)
+        ScrollViewReader { proxy in
+            LazyVStack(spacing: 0) {
+                ForEach(items) { app in
+                    AppRowView(
+                        app: app,
+                        onLaunch: onLaunch,
+                        onQuit: onQuit,
+                        onHide: onHide,
+                        availableTags: availableTags,
+                        iconSize: iconSize,
+                        onToggleTag: onToggleTag,
+                        onAddTag: onAddTag,
+                        onHoverApp: onHoverApp,
+                        isFocused: focusedAppID == app.id
+                    )
+                    .id(app.id)
+                    
+                    Divider()
+                        .padding(.leading, 56)
+                        .opacity(0.5)
+                }
+            }
+            .onChange(of: focusedAppID) { _, newValue in
+                 if let id = newValue {
+                     withAnimation {
+                         proxy.scrollTo(id, anchor: .center)
+                     }
+                 }
+            }
+            .onKeyPress(.return) {
+                 if let id = focusedAppID, let app = items.first(where: { $0.id == id }) {
+                     onLaunch(app)
+                     return .handled
+                 }
+                 return .ignored
             }
         }
     }
@@ -473,6 +547,7 @@ struct AppRowView: View {
     let onToggleTag: (AppItem, AppTag) -> Void
     let onAddTag: () -> Void
     let onHoverApp: (String?) -> Void
+    let isFocused: Bool
     
     @State private var hoveredAppId: String? = nil
     
@@ -484,7 +559,7 @@ struct AppRowView: View {
             
             Text(app.name)
                 .font(.body)
-                .foregroundColor(.primary)
+                .foregroundColor(isFocused ? .white : .primary)
             
             Spacer()
             
@@ -502,7 +577,9 @@ struct AppRowView: View {
         }
         .padding(.vertical, 8)
         .padding(.horizontal, 12)
-        .background(hoveredAppId == app.id ? Color.secondary.opacity(0.1) : Color.clear)
+        .background(
+            isFocused ? Color.accentColor : (hoveredAppId == app.id ? Color.secondary.opacity(0.1) : Color.clear)
+        )
         .cornerRadius(8)
         .contentShape(Rectangle())
         .onHover { isHovering in
@@ -595,21 +672,54 @@ struct SidebarView: View {
     
     @EnvironmentObject var appService: AppService
     
+    // Proxy to hide system selection when grid is focused (prevents ghosting)
+    var visualSelection: Binding<SidebarSelection?> {
+        Binding(
+            get: {
+                if appService.activeFocusZone == .grid {
+                    return nil
+                }
+                return selection
+            },
+            set: { newValue in
+                selection = newValue
+                if newValue != nil {
+                     appService.activeFocusZone = .sidebar
+                }
+            }
+        )
+    }
+    
     var body: some View {
-        List(selection: $selection) {
+        List(selection: visualSelection) {
             
             Section {
                 Label("All Apps", systemImage: "square.grid.2x2")
                     .tag(SidebarSelection.allApps)
+                    .listRowBackground((selection == .allApps && !isSidebarFocused) ? 
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(Color.primary.opacity(0.15))
+                            .padding(.horizontal, 6)
+                        : nil)
                 
                 if appService.showOpenApps {
                     Label("Open Apps", systemImage: "macwindow")
                         .tag(SidebarSelection.openApps)
+                        .listRowBackground((selection == .openApps && !isSidebarFocused) ? 
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(Color.primary.opacity(0.15))
+                                .padding(.horizontal, 6)
+                            : nil)
                 }
                 
                 if appService.showUtilities {
                     Label("Utilities", systemImage: "wrench.and.screwdriver")
                         .tag(SidebarSelection.utilities)
+                        .listRowBackground((selection == .utilities && !isSidebarFocused) ? 
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(Color.primary.opacity(0.15))
+                                .padding(.horizontal, 6)
+                            : nil)
                 }
             }
             
@@ -617,16 +727,33 @@ struct SidebarView: View {
                 if appService.tagSortMode == .manual {
                     ForEach(appService.displayTags) { tag in
                         TagRow(tag: tag, editingTagId: $editingTagId, focusedField: $focusedField)
+                            .tag(SidebarSelection.tag(tag.id))
+                            .listRowBackground((selection == .tag(tag.id) && !isSidebarFocused) ? 
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(Color.primary.opacity(0.15))
+                                    .padding(.horizontal, 6)
+                                : nil)
                     }
                     .onMove(perform: appService.moveTag)
                 } else {
                     ForEach(appService.displayTags) { tag in
                         TagRow(tag: tag, editingTagId: $editingTagId, focusedField: $focusedField)
+                            .tag(SidebarSelection.tag(tag.id))
+                            .listRowBackground((selection == .tag(tag.id) && !isSidebarFocused) ? 
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(Color.primary.opacity(0.15))
+                                    .padding(.horizontal, 6)
+                                : nil)
                     }
                 }
                 
                 Label("Untagged", systemImage: "tag.slash")
                     .tag(SidebarSelection.untagged)
+                    .listRowBackground((selection == .untagged && !isSidebarFocused) ? 
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(Color.primary.opacity(0.15))
+                            .padding(.horizontal, 6)
+                        : nil)
                 
                 Button(action: {
                     let newTag = appService.addTag(name: "New Tag")
@@ -641,6 +768,19 @@ struct SidebarView: View {
             }
         }
         .focused($isSidebarFocused)
+        .safeAreaInset(edge: .bottom) {
+            if let shortcut = appService.appSwitcherShortcutFormatted {
+                VStack(spacing: 0) {
+                    Divider()
+                    Text("App Switcher: \(shortcut)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .padding(.vertical, 8)
+                        .frame(maxWidth: .infinity)
+                }
+                .background(.regularMaterial)
+            }
+        }
 
     }
 }
@@ -769,4 +909,5 @@ class NonTabNSTextField: NSTextField {
     override func becomeFirstResponder() -> Bool {
         return super.becomeFirstResponder()
     }
+}
 }

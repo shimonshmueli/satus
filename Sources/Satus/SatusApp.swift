@@ -1,6 +1,8 @@
 import SwiftUI
 
 class AppDelegate: NSObject, NSApplicationDelegate {
+    var helpWindow: NSWindow?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         // 0. IMMEDIATE LOG
         print("!!! APP DELEGATE DID FINISH LAUNCHING (SYNCHRONOUS) !!!")
@@ -70,7 +72,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // About
         let aboutItem = NSMenuItem(
             title: "About Satus",
-            action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
+            action: #selector(showAbout),
             keyEquivalent: ""
         )
         appMenu.addItem(aboutItem)
@@ -88,7 +90,53 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         appMenuItem.submenu = appMenu
         mainMenu.addItem(appMenuItem)
         
+        // Help Menu
+        let helpMenuItem = NSMenuItem()
+        let helpMenu = NSMenu(title: "Help")
+        
+        let satusHelpItem = NSMenuItem(
+            title: "Satus Help",
+            action: #selector(showHelp),
+            keyEquivalent: "?"
+        )
+        helpMenu.addItem(satusHelpItem)
+        
+        helpMenuItem.submenu = helpMenu
+        mainMenu.addItem(helpMenuItem)
+        
         NSApplication.shared.mainMenu = mainMenu
+    }
+    
+    @objc func showAbout() {
+        let options: [NSApplication.AboutPanelOptionKey: Any] = [
+             .version: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "",
+             .applicationVersion: "", // Hide build number
+             .credits: NSAttributedString(string: "Copyright © 2026 Shimon Shmueli", attributes: [
+                 .font: NSFont.systemFont(ofSize: 11),
+                 .foregroundColor: NSColor.secondaryLabelColor
+             ])
+        ]
+        NSApplication.shared.orderFrontStandardAboutPanel(options: options)
+        NSApplication.shared.activate(ignoringOtherApps: true)
+    }
+
+    @objc func showHelp() {
+        if helpWindow == nil {
+            let helpView = HelpView()
+            let hostingController = NSHostingController(rootView: helpView)
+            
+            let window = NSWindow(contentViewController: hostingController)
+            window.title = "Satus Help"
+            window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+            window.center()
+            window.setFrameAutosaveName("SatusHelpWindow")
+            window.isReleasedWhenClosed = false
+            
+            self.helpWindow = window
+        }
+        
+        helpWindow?.makeKeyAndOrderFront(nil)
+        NSApplication.shared.activate(ignoringOtherApps: true)
     }
 }
 

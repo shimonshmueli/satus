@@ -75,3 +75,11 @@ enum AppFocusArea: Hashable {
     case sidebar
     case grid(String) // App ID
 }
+
+enum SidebarSelection: Hashable {
+    case allApps
+    case openApps
+    case utilities
+    case untagged
+    case tag(UUID)
+}
