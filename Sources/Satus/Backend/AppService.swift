@@ -42,11 +42,15 @@ class AppService: ObservableObject {
     
 
     
+
+    
     // Transient state for focus management
     @Published var triggeredByShortcut: Bool = false
 
     @Published var lastShortcutTime: Date = .distantPast
     @Published var switcherTargetID: String? = nil // Robust tracking for Switcher
+    
+    private var eventMonitor: Any?
     
     var displayTags: [AppTag] {
         switch tagSortMode {
@@ -68,6 +72,7 @@ class AppService: ObservableObject {
     enum FocusZone {
         case sidebar
         case grid
+        case search
     }
     
     @Published var activeFocusZone: FocusZone = .sidebar
@@ -137,7 +142,7 @@ class AppService: ObservableObject {
         self.focusedAppID = nil
     }
     
-    private var dockSizeTimer: Timer?
+    
     
     private func setupObservers() {
         let center = NSWorkspace.shared.notificationCenter
@@ -152,17 +157,87 @@ class AppService: ObservableObject {
              }
         }
         
-        // Update Dock Size on Terminate
-        NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
+        let defaultCenter = NotificationCenter.default
+        // Detect when App Hide (CMD+H or dock click)
+        defaultCenter.addObserver(forName: NSApplication.didHideNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in
                 self?.readDockTileSize()
             }
         }
         
-        // Periodic Update
-        dockSizeTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.readDockTileSize()
+        // Detect App Termination
+        defaultCenter.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
+             // Reset icon on quit
+             Task { @MainActor in
+                 if self != nil {
+                    let dockTile = NSApplication.shared.dockTile
+                    dockTile.badgeLabel = nil
+                 }
+             }
+        }
+        
+        setupEventMonitor()
+    }
+    
+    private func setupEventMonitor() {
+        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self = self else { return event }
+            let key = event.keyCode
+            print("DEBUG: Key Down: \(key), Zone: \(self.activeFocusZone)")
+            
+            // Priority Check: Escape (53) should always trigger, regardless of focus
+            if key == 53 {
+                 if let keyWindow = NSApplication.shared.keyWindow {
+                      if keyWindow.title == "Satus Help" || keyWindow.title.starts(with: "About ") {
+                          keyWindow.close()
+                          return nil
+                      }
+                 }
+                 
+                 NSApplication.shared.hide(nil)
+                 return nil
+            }
+            
+            // Avoid hijacking Search Bar (NSTextView is the field editor) for other keys
+            if let window = NSApplication.shared.keyWindow,
+               let _ = window.firstResponder as? NSTextView {
+                return event
+            }
+            
+            switch key {
+            case 36: // Return
+                let targetID = self.focusedAppID ?? self.switcherTargetID
+                if let id = targetID,
+                   let app = self.apps.first(where: { $0.id == id }) {
+                    self.launch(app: app)
+                    return nil
+                }
+                return event
+                
+            case 48: // Tab
+                if self.activeFocusZone == .sidebar {
+                    print("DEBUG: Tab from Sidebar -> Search")
+                    self.activeFocusZone = .search
+                    self.sidebarSelection = .allApps // Ensure we search all apps
+                    return nil // Consume event
+                }
+                return event
+
+            // ARROW KEYS (123-126)
+            case 123: // Left
+                self.handleArrowKey(.left)
+                return nil
+            case 124: // Right
+                self.handleArrowKey(.right)
+                return nil
+            case 125: // Down
+                self.handleArrowKey(.down)
+                return nil
+            case 126: // Up
+                self.handleArrowKey(.up)
+                return nil
+            default:
+                return event
             }
         }
     }
@@ -429,6 +504,7 @@ class AppService: ObservableObject {
             self.tagSortMode = legacySort ? .alphabetical : .manual
         }
         if let debug = prefs.isDebugMode { self.isDebugMode = debug }
+
         
         // Restore Tags
         self.tags = prefs.tags.map {

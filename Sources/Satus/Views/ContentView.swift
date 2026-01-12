@@ -18,7 +18,7 @@ struct ContentView: View {
     @State private var hoveredAppName: String?
     // removed local isShortcutTriggered
     
-    @FocusState private var isSearchFocused: Bool
+    @State private var searchFocusedState: Bool = false
     @FocusState private var isSidebarFocused: Bool
     @State private var headerVerticalOffset: CGFloat = -22
     
@@ -69,7 +69,7 @@ struct ContentView: View {
                         Image(systemName: "magnifyingglass")
                             .foregroundColor(.secondary)
                             .frame(height: 28)
-                        NonTabTextField(placeholder: "Search All Apps...", text: $appService.searchText)
+                        NonTabTextField(placeholder: "Search All Apps...", text: $appService.searchText, isFocused: $searchFocusedState)
                             .frame(height: 28)
                             // .focused($isSearchFocused) // Not needed as focus is controlled by focusing other elements
                             .onAppear {
@@ -88,7 +88,7 @@ struct ContentView: View {
                                     // If NOT a fresh shortcut (Mouse/Dock activation), enforce Sidebar Focus on All Apps
                                     if !isFreshShortcut {
                                         print("Manual Activation - Focusing Sidebar (All Apps)")
-                                        isSearchFocused = false
+                                        searchFocusedState = false
                                         isSidebarFocused = true
                                         appService.activeFocusZone = .sidebar
                                         appService.focusedAppID = nil // Explicitly clear grid focus
@@ -280,49 +280,18 @@ struct ContentView: View {
             isSidebarFocused = true
             appService.activeFocusZone = .sidebar
             
-            NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-                // Avoid hijacking Search Bar (NSTextView is the field editor)
-                if let window = NSApp.keyWindow,
-                   let responder = window.firstResponder as? NSTextView {
-                    return event
-                }
-                
-                let key = event.keyCode
-                switch key {
-                case 36: // Return
-                    let targetID = appService.focusedAppID ?? appService.switcherTargetID
-                    // Use apps list that matches current view context if possible, or search globally if ID is known.
-                    // safely finding the app object:
-                    if let id = targetID, 
-                       let app = appService.apps.first(where: { $0.id == id }) {
-                        appService.launch(app: app)
-                        return nil
-                    }
-                    return event
-                case 53: // Escape
-                    if let keyWindow = NSApplication.shared.keyWindow {
-                         if keyWindow.title == "Satus Help" || keyWindow.title.starts(with: "About ") {
-                             keyWindow.close()
-                             return nil
-                         }
-                    }
-                    NSApplication.shared.hide(nil)
-                    return nil
-                case 123: // Left
-                    appService.handleArrowKey(.left)
-                    return nil 
-                case 124: // Right
-                    appService.handleArrowKey(.right)
-                    return nil
-                case 125: // Down
-                    appService.handleArrowKey(.down)
-                    return nil
-                case 126: // Up
-                    appService.handleArrowKey(.up)
-                    return nil
-                default:
-                    return event
-                }
+        }
+        .onChange(of: appService.activeFocusZone) { _, newZone in
+            if newZone == .search {
+                searchFocusedState = true
+                isSidebarFocused = false
+            } else if newZone == .sidebar {
+                searchFocusedState = false
+                isSidebarFocused = true
+            } else {
+                // grid
+                searchFocusedState = false
+                isSidebarFocused = false
             }
         }
         .environmentObject(appService) // Only one instance at end
@@ -402,7 +371,7 @@ struct ContentView: View {
                 case .appSwitcher:
                     // Force distractions off
                     isSidebarFocused = false
-                    isSearchFocused = false
+                    searchFocusedState = false
                     
                     if appService.sidebarSelection == .openApps {
                         // Already on Open Apps view: CYCLE FOCUS
@@ -440,17 +409,14 @@ struct ContentView: View {
                 case .navigate(let targetSelection):
                     // ... existing ...
                     // Standard Behavior for other views (Sidebar Highlight)
-                    isSearchFocused = false
+                    searchFocusedState = false
                     isSidebarFocused = true
                     appService.sidebarSelection = targetSelection
                 }
             }
         }
     }
-    .onKeyPress(.escape) {
-        NSApplication.shared.hide(nil)
-        return .handled
-    }
+
     .onChange(of: appService.activeFocusZone) { _, newZone in
         if newZone == .sidebar {
             isSidebarFocused = true
@@ -475,7 +441,7 @@ struct ContentView: View {
         
         // Reset focus states
         isSidebarFocused = false
-        isSearchFocused = false
+        searchFocusedState = false
         
         // Explicitly clear grid focus
         appService.activeFocusZone = .sidebar
@@ -868,23 +834,29 @@ struct TagRow: View {
 struct NonTabTextField: NSViewRepresentable {
     var placeholder: String
     @Binding var text: String
-    @State private var isInternalUpdate = false
+    @Binding var isFocused: Bool
     
-    func makeNSView(context: Context) -> NonTabNSTextField {
-        let textField = NonTabNSTextField()
+    func makeNSView(context: Context) -> NSTextField {
+        let textField = NSTextField()
         textField.placeholderString = placeholder
         textField.isBordered = false
         textField.drawsBackground = false
         textField.focusRingType = .none
-        textField.font = NSFont.systemFont(ofSize: 22) // Approximation of .title2
+        textField.font = NSFont.systemFont(ofSize: 22)
         textField.textColor = .labelColor
         textField.delegate = context.coordinator
         return textField
     }
     
-    func updateNSView(_ nsView: NonTabNSTextField, context: Context) {
+    func updateNSView(_ nsView: NSTextField, context: Context) {
         if nsView.stringValue != text {
             nsView.stringValue = text
+        }
+        
+        if isFocused {
+            DispatchQueue.main.async {
+                nsView.window?.makeFirstResponder(nsView)
+            }
         }
     }
     
@@ -903,17 +875,14 @@ struct NonTabTextField: NSViewRepresentable {
             guard let textField = obj.object as? NSTextField else { return }
             parent.text = textField.stringValue
         }
-    }
-}
-
-class NonTabNSTextField: NSTextField {
-    override var canBecomeKeyView: Bool {
-        return false // Prevents Tabbing to this field
-    }
-    
-    // Ensure it can still be clicked to focus
-    override func becomeFirstResponder() -> Bool {
-        return super.becomeFirstResponder()
+        
+        func controlTextDidBeginEditing(_ obj: Notification) {
+            parent.isFocused = true
+        }
+        
+        func controlTextDidEndEditing(_ obj: Notification) {
+            parent.isFocused = false
+        }
     }
 }
 }

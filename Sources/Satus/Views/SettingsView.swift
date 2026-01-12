@@ -156,7 +156,7 @@ struct SettingsView: View {
                 
                 Section("About") {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Version 1.0")
+                        Text("Version 1.1")
                         Text("© 2025 Shimon Shmueli")
                     }
                     .font(.caption)
