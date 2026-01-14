@@ -407,37 +407,7 @@ struct ShortcutRow: View {
     }
     
     func formatShortcut(_ def: HotKeyDefinition) -> String {
-        var parts: [String] = []
-        let flags = NSEvent.ModifierFlags(rawValue: UInt(def.modifiers))
-        if flags.contains(.control) { parts.append("⌃") }
-        if flags.contains(.option) { parts.append("⌥") }
-        if flags.contains(.shift) { parts.append("⇧") }
-        if flags.contains(.command) { parts.append("⌘") }
-        
-        let mods = parts.joined(separator: "\u{2009}")
-        let key = keyString(for: def.keyCode)
-        
-        return mods.isEmpty ? key : mods + " " + key
-    }
-    
-    func keyString(for code: Int) -> String {
-        switch code {
-        case 49: return "Space"
-        case 36: return "Return"
-        case 53: return "Esc"
-        case 123: return "←"
-        case 124: return "→"
-        case 125: return "↓"
-        case 126: return "↑"
-        default:
-            if code >= 18 && code <= 29 { return ["1","2","3","4","5","6","7","8","9","0"][code-18] }
-            let map: [Int:String] = [
-                12:"Q", 13:"W", 14:"E", 15:"R", 16:"Y", 17:"T", 32:"U", 34:"I", 31:"O", 35:"P",
-                0:"A", 1:"S", 2:"D", 3:"F", 5:"G", 4:"H", 38:"J", 40:"K", 37:"L",
-                6:"Z", 7:"X", 8:"C", 9:"V", 11:"B", 45:"N", 46:"M"
-            ]
-            return map[code] ?? "Key(\(code))"
-        }
+        return GlobalHotkey.shared.formatShortcut(def)
     }
 }
 
@@ -568,31 +538,7 @@ struct CustomTagShortcutRow: View {
     }
     
     private func formatShortcut(_ def: HotKeyDefinition) -> String {
-        var parts: [String] = []
-        let mods = NSEvent.ModifierFlags(rawValue: UInt(def.modifiers))
-        if mods.contains(.control) { parts.append("⌃") }
-        if mods.contains(.option) { parts.append("⌥") }
-        if mods.contains(.shift) { parts.append("⇧") }
-        if mods.contains(.command) { parts.append("⌘") }
-        
-        if let key = keyCodeToString(def.keyCode) {
-            let mods = parts.joined(separator: "\u{2009}")
-            return mods.isEmpty ? key : mods + " " + key
-        }
-        return parts.joined(separator: "\u{2009}")
-    }
-    
-    private func keyCodeToString(_ code: Int) -> String? {
-        let mapping: [Int: String] = [
-            0: "A", 1: "S", 2: "D", 3: "F", 4: "H", 5: "G", 6: "Z", 7: "X", 8: "C", 9: "V",
-            11: "B", 12: "Q", 13: "W", 14: "E", 15: "R", 16: "Y", 17: "T",
-            31: "O", 32: "U", 34: "I", 35: "P", 37: "L", 38: "J", 40: "K",
-            45: "N", 46: "M",
-            18: "1", 19: "2", 20: "3", 21: "4", 23: "5", 22: "6", 26: "7", 28: "8", 25: "9", 29: "0",
-            36: "↩", 48: "⇥", 49: "Space", 51: "⌫", 53: "⎋",
-            123: "←", 124: "→", 125: "↓", 126: "↑"
-        ]
-        return mapping[code]
+        return GlobalHotkey.shared.formatShortcut(def)
     }
 }
 

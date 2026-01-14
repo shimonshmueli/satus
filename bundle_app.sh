@@ -77,7 +77,7 @@ fi
 
 # 5. Sign (Ad-hoc)
 echo "Signing Satus..."
-codesign --force --deep --sign - "$APP_NAME"
+codesign --force --sign - "$APP_NAME/Contents/MacOS/Satus"
 echo "App signed."
 
 # 6. Install

@@ -2,6 +2,28 @@
 set -e
 
 APP_NAME="Satus"
+# Default to Development
+SIGNING_IDENTITY="Apple Development"
+TEAM_ID="7H7A38V8CV" # Default Team ID
+IS_RELEASE=false
+
+# Parse Arguments
+for arg in "$@"
+do
+    case $arg in
+        --release)
+        IS_RELEASE=true
+        # Use Development cert hash for archiving; most reliable method
+        SIGNING_IDENTITY="BEC010CFEDA389AB331DDF14AC6BDB510C79952A" 
+        echo "🚀 Building for RELEASE (Using Development Cert Hash for Archive)"
+        ;;
+    esac
+done
+
+if [ "$IS_RELEASE" = false ]; then
+    echo "🔧 Building for DEVELOPMENT"
+fi
+
 # Sanitize PATH to avoid conda linker interference
 export PATH="/usr/bin:/bin:/usr/sbin:/sbin"
 
@@ -17,6 +39,7 @@ ARCHIVE_PATH="$PWD/Builds/${APP_NAME}_$(date +%Y-%m-%d_%H-%M-%S).xcarchive"
 
 echo "🚀 Archiving $APP_NAME using xcodebuild..."
 echo "📍 Archive Path: $ARCHIVE_PATH"
+echo "🔐 Signing with: $SIGNING_IDENTITY"
 
 # Ensure Builds directory exists
 mkdir -p Builds
@@ -28,8 +51,8 @@ xcodebuild archive \
     -archivePath "$ARCHIVE_PATH" \
     -derivedDataPath ".build/xcodebuild" \
     CODE_SIGN_STYLE="Manual" \
-    CODE_SIGN_IDENTITY="BEC010CFEDA389AB331DDF14AC6BDB510C79952A" \
-    DEVELOPMENT_TEAM="7H7A38V8CV" \
+    CODE_SIGN_IDENTITY="$SIGNING_IDENTITY" \
+    DEVELOPMENT_TEAM="$TEAM_ID" \
     PROVISIONING_PROFILE_SPECIFIER="" \
     CODE_SIGN_ENTITLEMENTS="" \
     CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO || {
@@ -74,8 +97,7 @@ if [ -f "source_icon.png" ]; then
     sips -z 128 128   source_icon_converted.png --out Satus.iconset/icon_128x128.png > /dev/null
     sips -z 256 256   source_icon_converted.png --out Satus.iconset/icon_128x128@2x.png > /dev/null
     sips -z 256 256   source_icon_converted.png --out Satus.iconset/icon_256x256.png > /dev/null
-    sips -z 512 512   source_icon_converted.png --out Satus.iconset/icon_256x256@2x.png > /dev/null
-    sips -z 512 512   source_icon_converted.png --out Satus.iconset/icon_512x512.png > /dev/null
+    sips -z 512 512   source_icon_converted.png --out Satus.iconset/icon_512x512@2x.png > /dev/null
     sips -z 1024 1024 source_icon_converted.png --out Satus.iconset/icon_512x512@2x.png > /dev/null
 
     iconutil -c icns Satus.iconset
@@ -92,9 +114,10 @@ rm -rf "$PRODUCTS_DIR/usr"
 
 # Update Archive Info.plist to point to the App Bundle
 # The default archive for a tool doesn't have ApplicationProperties, so we insert it.
-VERSION_STRING="1.0"
-BUILD_NUMBER="1"
-BUNDLE_ID="com.shimonshmueli.Satus"
+INFO_PLIST="Sources/Satus/Info.plist"
+VERSION_STRING=$(defaults read "$PWD/$INFO_PLIST" CFBundleShortVersionString)
+BUILD_NUMBER=$(defaults read "$PWD/$INFO_PLIST" CFBundleVersion)
+BUNDLE_ID=$(defaults read "$PWD/$INFO_PLIST" CFBundleIdentifier)
 
 plutil -insert ApplicationProperties -xml "
 <dict>
@@ -107,13 +130,13 @@ plutil -insert ApplicationProperties -xml "
     <key>CFBundleVersion</key>
     <string>$BUILD_NUMBER</string>
     <key>SigningIdentity</key>
-    <string>Apple Development: shimon.shmueli@outlook.com (7H7A38V8CV)</string>
+    <string>$SIGNING_IDENTITY</string>
     <key>Team</key>
-    <string>7H7A38V8CV</string>
+    <string>$TEAM_ID</string>
 </dict>" "$ARCHIVE_PATH/Info.plist"
 
 echo "✍️  Re-signing App Bundle with Entitlements..."
-codesign --force --sign "BEC010CFEDA389AB331DDF14AC6BDB510C79952A" \
+codesign --force --sign "$SIGNING_IDENTITY" \
     --entitlements "Entitlements.plist" \
     --options runtime \
     --timestamp \

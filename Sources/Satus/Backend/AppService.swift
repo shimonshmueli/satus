@@ -113,6 +113,13 @@ class AppService: ObservableObject {
     private let persistenceURL: URL?
     
     init() {
+        self.isSandboxed = ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] != nil
+        if self.isSandboxed {
+            print("🔒 App is running in Sandbox mode.")
+        } else {
+            print("🔓 App is NOT sandboxed.")
+        }
+        
         print("🚀 AppService init start")
         if let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
             let appDir = appSupport.appendingPathComponent("AppLibrary")
@@ -136,11 +143,15 @@ class AppService: ObservableObject {
         loadApps()
         setupObservers()
         
-        // Enforce clean start state
+    // Enforce clean start state
         self.activeFocusZone = .sidebar
         self.sidebarSelection = .allApps
         self.focusedAppID = nil
+        
     }
+    
+    // Sandbox State
+    let isSandboxed: Bool
     
     
     
@@ -387,14 +398,30 @@ class AppService: ObservableObject {
         return apps.filter { runningBundleIDs.contains($0.id) && !hiddenAppBundleIDs.contains($0.id) }
     }
     
+    var hiddenRunningApps: [AppItem] {
+        let runningBundleIDs = Set(NSWorkspace.shared.runningApplications.compactMap { $0.bundleIdentifier })
+        return apps.filter { runningBundleIDs.contains($0.id) && hiddenAppBundleIDs.contains($0.id) }
+    }
+    
+    func unhideApp(_ app: AppItem) {
+        if hiddenAppBundleIDs.contains(app.id) {
+            hiddenAppBundleIDs.remove(app.id)
+            savePreferences()
+        }
+    }
+    
     func launch(app: AppItem) {
         NSWorkspace.shared.openApplication(at: app.url, configuration: NSWorkspace.OpenConfiguration(), completionHandler: nil)
     }
     
     func quitApp(app: AppItem) {
+        print("DEBUG: Attempting to quit app: \(app.name) (\(app.id))")
         let running = NSWorkspace.shared.runningApplications
         if let target = running.first(where: { $0.bundleIdentifier == app.id }) {
-            target.terminate()
+            let success = target.terminate()
+            print("DEBUG: Terminate called on \(app.name). Success: \(success)")
+        } else {
+             print("DEBUG: Could not find running app for \(app.id)")
         }
     }
     

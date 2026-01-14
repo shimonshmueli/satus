@@ -148,60 +148,170 @@ struct ContentView: View {
                            .padding(.horizontal)
                         }
                         
-                        LazyVStack(alignment: .leading, spacing: 20, pinnedViews: []) {
-                            Group {
-                                if appService.viewMode == .grid {
-                                    SmartGridView(
-                                        items: appService.currentGridApps,
-                                        onLaunch: { app in
-                                            if case .tag(let id) = appService.sidebarSelection {
-                                                appService.recordTagUsage(id: id)
+                        VStack(alignment: .leading, spacing: 20) {
+                            if appService.sidebarSelection == .openApps {
+                                // 1. Visible Apps
+                                Group {
+                                    if appService.viewMode == .grid {
+                                        SmartGridView(
+                                            items: appService.currentGridApps,
+                                            onLaunch: { app in appService.launch(app: app) },
+                                            onUpdateSize: { app, size in appService.setSize(size, for: app.id) },
+                                            onToggleTag: { app, tag in appService.toggleTag(tag, for: app.id) },
+                                            onAddTag: {
+                                                let newTag = appService.addTag(name: "New Tag")
+                                                appService.sidebarSelection = .tag(newTag.id)
+                                                editingTagId = newTag.id
+                                                focusedField = newTag.id
+                                            },
+                                            onQuit: { app in appService.quitApp(app: app) },
+                                            onHide: { app in appService.hiddenAppBundleIDs.insert(app.id) },
+                                            onRestore: nil,
+                                            onHoverApp: { name in hoveredAppName = name },
+                                            availableTags: appService.tags,
+                                            availableWidth: geometry.size.width,
+                                            focusedAppID: $appService.focusedAppID
+                                        )
+                                        .environmentObject(appService)
+                                    } else {
+                                        AppListView(
+                                            items: appService.currentGridApps,
+                                            onLaunch: { app in appService.launch(app: app) },
+                                            onQuit: { app in appService.quitApp(app: app) },
+                                            onHide: { app in appService.hiddenAppBundleIDs.insert(app.id) },
+                                            onRestore: nil,
+                                            availableTags: appService.tags,
+                                            iconSize: baseIconSize,
+                                            onToggleTag: { app, tag in appService.toggleTag(tag, for: app.id) },
+                                            onAddTag: {
+                                                let newTag = appService.addTag(name: "New Tag")
+                                                appService.sidebarSelection = .tag(newTag.id)
+                                                editingTagId = newTag.id
+                                                focusedField = newTag.id
+                                            },
+                                            onHoverApp: { name in hoveredAppName = name },
+                                            isSandboxed: appService.isSandboxed,
+                                            focusedAppID: $appService.focusedAppID
+                                        )
+                                    }
+                                }
+                                .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+                                    for provider in providers {
+                                        _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                                            guard let url = url else { return }
+                                            Task { @MainActor in
+                                                if let app = appService.hiddenRunningApps.first(where: { $0.url.path == url.path }) {
+                                                    appService.unhideApp(app)
+                                                }
                                             }
-                                            appService.launch(app: app)
-                                        },
-                                        onUpdateSize: { app, size in
-                                            appService.setSize(size, for: app.id)
-                                        },
-                                        onToggleTag: { app, tag in
-                                            appService.toggleTag(tag, for: app.id)
-                                        },
-                                        onAddTag: {
-                                            let newTag = appService.addTag(name: "New Tag")
-                                            appService.sidebarSelection = .tag(newTag.id)
-                                            editingTagId = newTag.id
-                                            focusedField = newTag.id
-                                        },
-                                        onQuit: (appService.sidebarSelection == .openApps) ? { app in appService.quitApp(app: app) } : nil,
-                                        onHide: (appService.sidebarSelection == .openApps) ? { app in appService.hiddenAppBundleIDs.insert(app.id) } : nil,
-                                        onHoverApp: { name in hoveredAppName = name },
-                                        availableTags: appService.tags,
-                                        availableWidth: geometry.size.width,
-                                        focusedAppID: $appService.focusedAppID
-                                    )
-                                    .environmentObject(appService)
-                                } else {
-                                    AppListView(
-                                        items: appService.currentGridApps,
-                                        onLaunch: { app in
-                                            if case .tag(let id) = appService.sidebarSelection {
-                                                appService.recordTagUsage(id: id)
-                                            }
-                                            appService.launch(app: app)
-                                        },
-                                        onQuit: (appService.sidebarSelection == .openApps) ? { app in appService.quitApp(app: app) } : nil,
-                                        onHide: (appService.sidebarSelection == .openApps) ? { app in appService.hiddenAppBundleIDs.insert(app.id) } : nil,
-                                        availableTags: appService.tags,
-                                        iconSize: baseIconSize,
-                                        onToggleTag: { app, tag in appService.toggleTag(tag, for: app.id) },
-                                        onAddTag: {
-                                            let newTag = appService.addTag(name: "New Tag")
-                                            appService.sidebarSelection = .tag(newTag.id)
-                                            editingTagId = newTag.id
-                                            focusedField = newTag.id
-                                        },
-                                        onHoverApp: { name in hoveredAppName = name },
-                                        focusedAppID: $appService.focusedAppID
-                                    )
+                                        }
+                                    }
+                                    return true
+                                }
+                                
+                                // 2. Hidden Apps
+                                if !appService.hiddenRunningApps.isEmpty {
+                                    Divider()
+                                        .padding(.vertical, 10)
+                                    
+                                    Text("Hidden Apps")
+                                        .font(.headline)
+                                        .foregroundColor(.secondary)
+                                        .padding(.horizontal, 35)
+                                    
+                                    if appService.viewMode == .grid {
+                                        SmartGridView(
+                                            items: appService.hiddenRunningApps,
+                                            onLaunch: { _ in }, // Disabled
+                                            onUpdateSize: { app, size in appService.setSize(size, for: app.id) },
+                                            onToggleTag: { _, _ in }, // Disabled
+                                            onAddTag: { }, // Disabled
+                                            onQuit: nil,
+                                            onHide: nil,
+                                            onRestore: { app in appService.unhideApp(app) },
+                                            onHoverApp: { name in hoveredAppName = name },
+                                            availableTags: [], // Hide tags interaction
+                                            availableWidth: geometry.size.width,
+                                            focusedAppID: .constant(nil) // No focus for hidden
+                                        )
+                                        .environmentObject(appService)
+                                    } else {
+                                        AppListView(
+                                            items: appService.hiddenRunningApps,
+                                            onLaunch: { _ in }, // Disabled
+                                            onQuit: nil,
+                                            onHide: nil,
+                                            onRestore: { app in appService.unhideApp(app) },
+                                            availableTags: [], // Hide tags interaction
+                                            iconSize: baseIconSize,
+                                            onToggleTag: { _, _ in },
+                                            onAddTag: { },
+                                            onHoverApp: { name in hoveredAppName = name },
+                                            isSandboxed: appService.isSandboxed,
+                                            focusedAppID: .constant(nil)
+                                        )
+                                    }
+                                }
+                                
+                            } else {
+                                // Default View for other selections
+                                Group {
+                                    if appService.viewMode == .grid {
+                                        SmartGridView(
+                                            items: appService.currentGridApps,
+                                            onLaunch: { app in
+                                                if case .tag(let id) = appService.sidebarSelection {
+                                                    appService.recordTagUsage(id: id)
+                                                }
+                                                appService.launch(app: app)
+                                            },
+                                            onUpdateSize: { app, size in
+                                                appService.setSize(size, for: app.id)
+                                            },
+                                            onToggleTag: { app, tag in
+                                                appService.toggleTag(tag, for: app.id)
+                                            },
+                                            onAddTag: {
+                                                let newTag = appService.addTag(name: "New Tag")
+                                                appService.sidebarSelection = .tag(newTag.id)
+                                                editingTagId = newTag.id
+                                                focusedField = newTag.id
+                                            },
+                                            onQuit: nil,
+                                            onHide: nil,
+                                            onRestore: nil,
+                                            onHoverApp: { name in hoveredAppName = name },
+                                            availableTags: appService.tags,
+                                            availableWidth: geometry.size.width,
+                                            focusedAppID: $appService.focusedAppID
+                                        )
+                                        .environmentObject(appService)
+                                    } else {
+                                        AppListView(
+                                            items: appService.currentGridApps,
+                                            onLaunch: { app in
+                                                if case .tag(let id) = appService.sidebarSelection {
+                                                    appService.recordTagUsage(id: id)
+                                                }
+                                                appService.launch(app: app)
+                                            },
+                                            onQuit: nil,
+                                            onHide: nil,
+                                            onRestore: nil,
+                                            availableTags: appService.tags,
+                                            iconSize: baseIconSize,
+                                            onToggleTag: { app, tag in appService.toggleTag(tag, for: app.id) },
+                                            onAddTag: {
+                                                let newTag = appService.addTag(name: "New Tag")
+                                                appService.sidebarSelection = .tag(newTag.id)
+                                                editingTagId = newTag.id
+                                                focusedField = newTag.id
+                                            },
+                                            onHoverApp: { name in hoveredAppName = name },
+                                            isSandboxed: appService.isSandboxed,
+                                            focusedAppID: $appService.focusedAppID
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -299,9 +409,9 @@ struct ContentView: View {
         WindowAccessor { window in
              self.window = window
              // Ensure buttons hidden here too in case AppDelegate missed it?
-             window.standardWindowButton(.closeButton)?.isHidden = true
-             window.standardWindowButton(.miniaturizeButton)?.isHidden = true
-             window.standardWindowButton(.zoomButton)?.isHidden = true
+             window.standardWindowButton(.closeButton)?.isHidden = false
+             window.standardWindowButton(.miniaturizeButton)?.isHidden = false
+             window.standardWindowButton(.zoomButton)?.isHidden = false
              window.titlebarAppearsTransparent = true
              window.titleVisibility = .hidden
              // window.isMovableByWindowBackground = true // REMOVED to fix drag conflict
@@ -354,9 +464,9 @@ struct ContentView: View {
             if let window = app.windows.first {
                 window.makeKeyAndOrderFront(nil)
                 // Restore window style just in case
-                window.standardWindowButton(.closeButton)?.isHidden = true
-                window.standardWindowButton(.miniaturizeButton)?.isHidden = true
-                window.standardWindowButton(.zoomButton)?.isHidden = true
+                window.standardWindowButton(.closeButton)?.isHidden = false
+                window.standardWindowButton(.miniaturizeButton)?.isHidden = false
+                window.standardWindowButton(.zoomButton)?.isHidden = false
                 window.titlebarAppearsTransparent = true
                 window.titleVisibility = .hidden
             }
@@ -459,12 +569,14 @@ struct AppListView: View {
     let onLaunch: (AppItem) -> Void
     let onQuit: ((AppItem) -> Void)?
     let onHide: ((AppItem) -> Void)?
+    let onRestore: ((AppItem) -> Void)?
     let availableTags: [AppTag]
     let iconSize: CGFloat
     let onToggleTag: (AppItem, AppTag) -> Void
 
     let onAddTag: () -> Void
     let onHoverApp: (String?) -> Void
+    let isSandboxed: Bool
     
     @Binding var focusedAppID: String?
     
@@ -477,12 +589,14 @@ struct AppListView: View {
                         onLaunch: onLaunch,
                         onQuit: onQuit,
                         onHide: onHide,
+                        onRestore: onRestore,
                         availableTags: availableTags,
                         iconSize: iconSize,
                         onToggleTag: onToggleTag,
                         onAddTag: onAddTag,
                         onHoverApp: onHoverApp,
-                        isFocused: focusedAppID == app.id
+                        isFocused: focusedAppID == app.id,
+                        isSandboxed: isSandboxed
                     )
                     .id(app.id)
                     
@@ -514,12 +628,14 @@ struct AppRowView: View {
     let onLaunch: (AppItem) -> Void
     let onQuit: ((AppItem) -> Void)?
     let onHide: ((AppItem) -> Void)?
+    let onRestore: ((AppItem) -> Void)?
     let availableTags: [AppTag]
     let iconSize: CGFloat
     let onToggleTag: (AppItem, AppTag) -> Void
     let onAddTag: () -> Void
     let onHoverApp: (String?) -> Void
     let isFocused: Bool
+    let isSandboxed: Bool
     
     @State private var hoveredAppId: String? = nil
     
@@ -562,59 +678,72 @@ struct AppRowView: View {
             onLaunch(app)
         }
         .contextMenu {
-             if let onQuit = onQuit {
-                 Button(role: .destructive, action: { onQuit(app) }) {
-                     Label("Quit", systemImage: "xmark.circle")
+             if let onRestore = onRestore {
+                 Button(action: { onRestore(app) }) {
+                     Label("Restore to Open Apps", systemImage: "arrow.uturn.backward")
                  }
              } else {
-                 Button(action: { onLaunch(app) }) {
-                     Label("Open", systemImage: "arrow.up.forward.app")
-                 }
-             }
-             
-             Button(action: {
-                 NSWorkspace.shared.activateFileViewerSelecting([app.url])
-             }) {
-                 Label("Show in Finder", systemImage: "folder")
-             }
-             
-             if let onHide = onHide {
-                  Button(action: { onHide(app) }) {
-                      Label("Hide \(app.name)", systemImage: "eye.slash")
-                  }
-             }
-             
-             Divider()
-             
-             Menu {
-                 // System Categories
-                 let isUtility = app.url.path.contains("/Applications/Utilities")
-                 Button(action: {}) {
-                     HStack {
-                         Text("Utilities")
-                         if isUtility {
-                             Image(systemName: "checkmark")
+                 if let onQuit = onQuit {
+                     if isSandboxed {
+                         Button(role: .destructive, action: {}) {
+                             Label("Quit (Sandbox Restricted)", systemImage: "xmark.circle")
+                         }
+                         .disabled(true)
+                     } else {
+                         Button(role: .destructive, action: { onQuit(app) }) {
+                             Label("Quit", systemImage: "xmark.circle")
                          }
                      }
+                 } else {
+                     Button(action: { onLaunch(app) }) {
+                         Label("Open", systemImage: "arrow.up.forward.app")
+                     }
                  }
-                 .disabled(true) // Read-only
+                 
+                 Button(action: {
+                     NSWorkspace.shared.activateFileViewerSelecting([app.url])
+                 }) {
+                     Label("Show in Finder", systemImage: "folder")
+                 }
+                 
+                 if let onHide = onHide {
+                      Button(action: { onHide(app) }) {
+                          Label("Hide \(app.name)", systemImage: "eye.slash")
+                      }
+                 }
                  
                  Divider()
                  
-                 ForEach(availableTags) { tag in
-                     Button(action: { onToggleTag(app, tag) }) {
+                 Menu {
+                     // System Categories
+                     let isUtility = app.url.path.contains("/Applications/Utilities")
+                     Button(action: {}) {
                          HStack {
-                             Text(tag.name)
-                             if app.tags.contains(tag.id) {
+                             Text("Utilities")
+                             if isUtility {
                                  Image(systemName: "checkmark")
                              }
                          }
                      }
+                     .disabled(true) // Read-only
+                     
+                     Divider()
+                     
+                     ForEach(availableTags) { tag in
+                         Button(action: { onToggleTag(app, tag) }) {
+                             HStack {
+                                 Text(tag.name)
+                                 if app.tags.contains(tag.id) {
+                                     Image(systemName: "checkmark")
+                                 }
+                             }
+                         }
+                     }
+                     Divider()
+                     Button("Add New Tag...") { onAddTag() }
+                 } label: {
+                     Label("Tags", systemImage: "tag")
                  }
-                 Divider()
-                 Button("Add New Tag...") { onAddTag() }
-             } label: {
-                 Label("Tags", systemImage: "tag")
              }
         }
         .draggable(app.url) {
@@ -855,7 +984,9 @@ struct NonTabTextField: NSViewRepresentable {
         
         if isFocused {
             DispatchQueue.main.async {
-                nsView.window?.makeFirstResponder(nsView)
+                if let window = nsView.window, window.firstResponder != nsView.currentEditor() && window.firstResponder != nsView {
+                     window.makeFirstResponder(nsView)
+                }
             }
         }
     }

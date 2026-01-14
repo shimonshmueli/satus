@@ -1,8 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-
-
 @available(macOS 13.0, *)
 struct AppTransferable: Transferable {
     let app: AppItem
@@ -32,6 +30,7 @@ struct SmartGridView: View {
     let onAddTag: () -> Void 
     let onQuit: ((AppItem) -> Void)?
     let onHide: ((AppItem) -> Void)?
+    let onRestore: ((AppItem) -> Void)?
     let onHoverApp: (String?) -> Void
     let availableTags: [AppTag]
     let availableWidth: CGFloat
@@ -67,16 +66,15 @@ struct SmartGridView: View {
                                 onLaunch: onLaunch,
                                 onQuit: onQuit,
                                 onHide: onHide,
+                                onRestore: onRestore,
                                 onUpdateSize: onUpdateSize,
                                 onToggleTag: onToggleTag,
                                 onAddTag: onAddTag,
                                 onHoverApp: onHoverApp,
-                                availableTags: availableTags
+                                availableTags: availableTags,
+                                isSandboxed: appService.isSandboxed
                             )
                             .id(app.id)
-                            .id(app.id)
-                            //.focusable() // Manual handling
-                            //.focused($focusedAppID, equals: app.id) // Manual handling
                             .accessibilityLabel(app.name)
                             .onTapGesture {
                                 onLaunch(app)
@@ -112,9 +110,6 @@ struct SmartGridView: View {
             }
         }
     }
-    
-    // moveFocus removed
-
 }
 
 struct AppIconView: View {
@@ -125,12 +120,14 @@ struct AppIconView: View {
     let onLaunch: (AppItem) -> Void
     let onQuit: ((AppItem) -> Void)?
     let onHide: ((AppItem) -> Void)?
+    let onRestore: ((AppItem) -> Void)?
     let onUpdateSize: (AppItem, AppSize) -> Void
     let onToggleTag: (AppItem, AppTag) -> Void
 
     let onAddTag: () -> Void
     let onHoverApp: (String?) -> Void
     let availableTags: [AppTag]
+    let isSandboxed: Bool
     
     @State private var isHovering = false
     
@@ -169,63 +166,76 @@ struct AppIconView: View {
         .frame(width: app.size == .large ? largeSize + 20 : size + 20, height: app.size == .large ? largeSize + 20 : size + 30)
         .contentShape(Rectangle())
         .contextMenu {
-            if let onQuit = onQuit {
-                Button(role: .destructive, action: { onQuit(app) }) {
-                    Label("Quit", systemImage: "xmark.circle")
+            if let onRestore = onRestore {
+                Button(action: { onRestore(app) }) {
+                    Label("Restore to Open Apps", systemImage: "arrow.uturn.backward")
                 }
             } else {
-                Button(action: { onLaunch(app) }) {
-                    Label("Open", systemImage: "arrow.up.forward.app")
-                }
-            }
-            
-            if let onHide = onHide {
-                Button(action: { onHide(app) }) {
-                   Label("Hide \(app.name)", systemImage: "eye.slash")
-                }
-            }
-            
-            Button(action: {
-                NSWorkspace.shared.activateFileViewerSelecting([app.url])
-            }) {
-                Label("Show in Finder", systemImage: "folder")
-            }
-            
-            Divider()
-            
-            Menu {
-                // System Categories
-                let isUtility = app.url.path.contains("/Applications/Utilities")
-                Button(action: {}) {
-                    HStack {
-                        Text("Utilities")
-                        if isUtility {
-                            Image(systemName: "checkmark")
+                if let onQuit = onQuit {
+                    if isSandboxed {
+                         Button(role: .destructive, action: {}) {
+                             Label("Quit (Sandbox Restricted)", systemImage: "xmark.circle")
+                         }
+                         .disabled(true)
+                    } else {
+                        Button(role: .destructive, action: { onQuit(app) }) {
+                            Label("Quit", systemImage: "xmark.circle")
                         }
                     }
+                } else {
+                    Button(action: { onLaunch(app) }) {
+                        Label("Open", systemImage: "arrow.up.forward.app")
+                    }
                 }
-                .disabled(true) // Read-only
                 
+                Button(action: {
+                    NSWorkspace.shared.activateFileViewerSelecting([app.url])
+                }) {
+                    Label("Show in Finder", systemImage: "folder")
+                }
+                
+                if let onHide = onHide {
+                    Button(action: { onHide(app) }) {
+                       Label("Hide \(app.name)", systemImage: "eye.slash")
+                    }
+                }
+
                 Divider()
                 
-                ForEach(availableTags) { tag in
-                    Button(action: { onToggleTag(app, tag) }) {
+                Menu {
+                    // System Categories
+                    let isUtility = app.url.path.contains("/Applications/Utilities")
+                    Button(action: {}) {
                         HStack {
-                            Text(tag.name)
-                            if app.tags.contains(tag.id) {
+                            Text("Utilities")
+                            if isUtility {
                                 Image(systemName: "checkmark")
                             }
                         }
                     }
+                    .disabled(true) // Read-only
+                    
+                    Divider()
+                    
+                    ForEach(availableTags) { tag in
+                        Button(action: { onToggleTag(app, tag) }) {
+                            HStack {
+                                Text(tag.name)
+                                if app.tags.contains(tag.id) {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    }
+                    
+                    Divider()
+                    
+                    Button("Add New Tag...") {
+                        onAddTag()
+                    }
+                } label: {
+                    Label("Tags", systemImage: "tag")
                 }
-                
-                Divider()
-                
-                Button("Add New Tag...") {
-                    onAddTag()
-                }
-            } label: {
-                Label("Tags", systemImage: "tag")
             }
         }
         .draggable(app.url) {
