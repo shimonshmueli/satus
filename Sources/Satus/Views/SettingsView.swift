@@ -61,7 +61,7 @@ struct SettingsView: View {
                     Picker("Sort Tags", selection: $appService.tagSortMode) {
                         Text("Manual").tag(TagSortMode.manual)
                         Text("Alphabetical").tag(TagSortMode.alphabetical)
-                        Text("Frequency").tag(TagSortMode.frequency)
+                        Text("Most Used").tag(TagSortMode.frequency)
                     }
                     .pickerStyle(.menu)
                     
@@ -81,14 +81,17 @@ struct SettingsView: View {
                          .padding(.vertical, 4)
                     }
                     
-                    Divider()
-                    
-                    Button(action: {
-                        appService.hiddenAppBundleIDs.removeAll()
-                    }) {
-                        Label("Unhide All Apps", systemImage: "eye")
+
+                    Picker("Default Tag on Launch", selection: Binding(
+                        get: { appService.defaultTagId ?? UUID(uuidString: "00000000-0000-0000-0000-000000000000")! },
+                        set: { appService.defaultTagId = ($0 == UUID(uuidString: "00000000-0000-0000-0000-000000000000")!) ? nil : $0 }
+                    )) {
+                        Text("All Apps").tag(UUID(uuidString: "00000000-0000-0000-0000-000000000000")!)
+                        Divider()
+                        ForEach(appService.tags) { tag in
+                            Text(tag.name).tag(tag.id)
+                        }
                     }
-                    .disabled(appService.hiddenAppBundleIDs.isEmpty)
                     
                     if !appService.hiddenAppBundleIDs.isEmpty {
                         Text("\(appService.hiddenAppBundleIDs.count) app(s) currently hidden from Open Apps")

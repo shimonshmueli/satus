@@ -40,6 +40,10 @@ class AppService: ObservableObject {
         didSet { savePreferences() }
     }
     
+    @Published var defaultTagId: UUID? = nil {
+        didSet { savePreferences() }
+    }
+    
 
     
 
@@ -513,7 +517,7 @@ class AppService: ObservableObject {
         
         let tagSettings = tags.map { AppTagDTO(id: $0.id, name: $0.name, colorHex: $0.colorHex, items: $0.items, usageCount: $0.usageCount) }
         
-        return UserPreferences(tags: tagSettings, appSettings: appSettings, iconScale: iconScale, appTheme: appTheme, viewMode: viewMode, shortcutMapping: shortcutTagMapping, showOpenApps: showOpenApps, showUtilities: showUtilities, hiddenAppBundleIDs: Array(hiddenAppBundleIDs), sortTagsAlphabetically: nil, tagSortMode: tagSortMode, isDebugMode: isDebugMode)
+        return UserPreferences(tags: tagSettings, appSettings: appSettings, iconScale: iconScale, appTheme: appTheme, viewMode: viewMode, shortcutMapping: shortcutTagMapping, showOpenApps: showOpenApps, showUtilities: showUtilities, hiddenAppBundleIDs: Array(hiddenAppBundleIDs), sortTagsAlphabetically: nil, tagSortMode: tagSortMode, isDebugMode: isDebugMode, defaultTagId: defaultTagId)
     }
 
     func restorePreferences(_ prefs: UserPreferences) {
@@ -531,6 +535,7 @@ class AppService: ObservableObject {
             self.tagSortMode = legacySort ? .alphabetical : .manual
         }
         if let debug = prefs.isDebugMode { self.isDebugMode = debug }
+        if let defaultTag = prefs.defaultTagId { self.defaultTagId = defaultTag }
 
         
         // Restore Tags
@@ -806,6 +811,7 @@ class AppService: ObservableObject {
         let sortTagsAlphabetically: Bool?
         let tagSortMode: TagSortMode?
         let isDebugMode: Bool?
+        let defaultTagId: UUID?
     }
     
     struct ExportManifest: Codable {

@@ -112,6 +112,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         appMenuItem.submenu = appMenu
         mainMenu.addItem(appMenuItem)
         
+        // Window Menu
+        let windowMenuItem = NSMenuItem()
+        let windowMenu = NSMenu(title: "Window")
+        
+        let openItem = NSMenuItem(
+            title: "Open Satus",
+            action: #selector(showMainWindow),
+            keyEquivalent: "0"
+        )
+        windowMenu.addItem(openItem)
+        windowMenu.addItem(NSMenuItem.separator())
+        windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.miniaturize(_:)), keyEquivalent: "m")
+        windowMenu.addItem(withTitle: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
+        
+        windowMenuItem.submenu = windowMenu
+        mainMenu.addItem(windowMenuItem)
+        
+        // Register as system Windows menu (auto-populates open windows)
+        NSApplication.shared.windowsMenu = windowMenu
+        
         // Help Menu
         let helpMenuItem = NSMenuItem()
         let helpMenu = NSMenu(title: "Help")
@@ -127,6 +147,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         mainMenu.addItem(helpMenuItem)
         
         NSApplication.shared.mainMenu = mainMenu
+    }
+    
+    @objc func showMainWindow() {
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        
+        // Find existing window (even if hidden/closed but not released)
+        if let window = NSApplication.shared.windows.first(where: { $0.identifier?.rawValue == "MainWindow" }) {
+            window.makeKeyAndOrderFront(nil)
+        } else {
+             // Fallback: If for some reason it's gone, try generic activation
+             // (SwiftUI might fail to recreate it here without OpenWindowAction)
+             print("Main Window not found in NSApp.windows")
+        }
     }
     
     @objc func showAbout() {

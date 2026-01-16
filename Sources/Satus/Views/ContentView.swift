@@ -85,14 +85,21 @@ struct ContentView: View {
                                     // Check if last shortcut was within 1.0 second (Fresh Shortcut)
                                     let isFreshShortcut = Date().timeIntervalSince(appService.lastShortcutTime) < 1.0
                                     
-                                    // If NOT a fresh shortcut (Mouse/Dock activation), enforce Sidebar Focus on All Apps
+                                    // If NOT a fresh shortcut (Mouse/Dock activation)
                                     if !isFreshShortcut {
-                                        print("Manual Activation - Focusing Sidebar (All Apps)")
+                                        print("Manual Activation - Focusing Sidebar")
                                         searchFocusedState = false
                                         isSidebarFocused = true
                                         appService.activeFocusZone = .sidebar
                                         appService.focusedAppID = nil // Explicitly clear grid focus
-                                        if appService.sidebarSelection == nil {
+                                        
+                                        // Use Default Tag if set, otherwise default to All Apps if nil
+                                        if let defaultTag = appService.defaultTagId {
+                                             // If current selection is NOT the default tag, switch to it?
+                                             // Or only if selection is nil? 
+                                             // User request: "Same as shortcut to that tag" => Switch to it.
+                                             appService.sidebarSelection = .tag(defaultTag)
+                                        } else if appService.sidebarSelection == nil {
                                             appService.sidebarSelection = .allApps
                                         }
                                     }
@@ -404,6 +411,11 @@ struct ContentView: View {
                 isSidebarFocused = false
             }
         }
+        .onChange(of: searchFocusedState) { _, isFocused in
+            if !isFocused && appService.activeFocusZone == .search {
+                appService.activeFocusZone = .sidebar
+            }
+        }
         .environmentObject(appService) // Only one instance at end
     .background(
         WindowAccessor { window in
@@ -414,6 +426,9 @@ struct ContentView: View {
              window.standardWindowButton(.zoomButton)?.isHidden = false
              window.titlebarAppearsTransparent = true
              window.titleVisibility = .hidden
+             
+             window.identifier = NSUserInterfaceItemIdentifier("MainWindow")
+             window.isReleasedWhenClosed = false
              // window.isMovableByWindowBackground = true // REMOVED to fix drag conflict
              
              // Initial Check
@@ -893,6 +908,7 @@ struct TagRow: View {
     
     @EnvironmentObject var appService: AppService
     @State private var isTargeted = false
+    @State private var showDeleteConfirmation = false
     
     var body: some View {
         HStack {
@@ -941,8 +957,16 @@ struct TagRow: View {
                 focusedField = tag.id
             }
             Button("Remove Tag", role: .destructive) {
+                showDeleteConfirmation = true
+            }
+        }
+        .alert("Remove \"\(tag.name)\" from sidebar?", isPresented: $showDeleteConfirmation) {
+            Button("Remove", role: .destructive) {
                 appService.deleteTag(id: tag.id)
             }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("This will only remove the tag filter. No apps will be deleted.")
         }
         .dropDestination(for: URL.self) { items, _ in
              Task {
