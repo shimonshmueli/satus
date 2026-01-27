@@ -37,7 +37,10 @@ class AppService: ObservableObject {
     }
     
     @Published var isDebugMode: Bool = false {
-        didSet { savePreferences() }
+        didSet { 
+            savePreferences()
+            UserDefaults.standard.set(isDebugMode, forKey: "isDebugMode")
+        }
     }
     
     @Published var defaultTagId: UUID? = nil {
@@ -55,6 +58,53 @@ class AppService: ObservableObject {
     @Published var switcherTargetID: String? = nil // Robust tracking for Switcher
     
     private var eventMonitor: Any?
+    
+    // File System Monitoring
+    private var folderMonitors: [DispatchSourceFileSystemObject] = []
+    private var debounceTimer: Timer?
+    
+    func startMonitoringApps() {
+        // Clear existing
+        folderMonitors.forEach { $0.cancel() }
+        folderMonitors.removeAll()
+        
+        let paths = [
+            "/Applications",
+            "/System/Applications",
+            FileManager.default.urls(for: .applicationDirectory, in: .userDomainMask).first?.path ?? ("\(NSHomeDirectory())/Applications")
+        ]
+        
+        for path in paths {
+            let url = URL(fileURLWithPath: path)
+            // Ensure directory exists before monitoring
+            guard FileManager.default.fileExists(atPath: url.path) else { continue }
+            
+            let descriptor = open(url.path, O_EVTONLY)
+            if descriptor == -1 { continue }
+            
+            let source = DispatchSource.makeFileSystemObjectSource(fileDescriptor: descriptor, eventMask: .write, queue: .main)
+            
+            source.setEventHandler { [weak self] in
+                self?.handleAppDirectoryChange()
+            }
+            
+            source.setCancelHandler {
+                close(descriptor)
+            }
+            
+            source.resume()
+            folderMonitors.append(source)
+            print("Monitoring for apps in: \(path)")
+        }
+    }
+    
+    private func handleAppDirectoryChange() {
+        debounceTimer?.invalidate()
+        debounceTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { [weak self] _ in
+            print("App Directory Changed. Reloading apps...")
+            self?.loadApps()
+        }
+    }
     
     var displayTags: [AppTag] {
         switch tagSortMode {
@@ -142,10 +192,11 @@ class AppService: ObservableObject {
         }
         
         // Potential crashers?
-        readDockTileSize()
+        // readDockTileSize() // Disabled for performance
         checkDockPersistence()
         loadApps()
         setupObservers()
+        startMonitoringApps()
         
     // Enforce clean start state
         self.activeFocusZone = .sidebar
@@ -176,7 +227,7 @@ class AppService: ObservableObject {
         // Detect when App Hide (CMD+H or dock click)
         defaultCenter.addObserver(forName: NSApplication.didHideNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in
-                self?.readDockTileSize()
+                // self?.readDockTileSize() // Disabled
             }
         }
         
@@ -415,6 +466,12 @@ class AppService: ObservableObject {
     }
     
     func launch(app: AppItem) {
+        triggeredByShortcut = false
+        // Prevent ghosting on return
+        if let id = switcherTargetID {
+            switcherTargetID = nil 
+        }
+        
         NSWorkspace.shared.openApplication(at: app.url, configuration: NSWorkspace.OpenConfiguration(), completionHandler: nil)
     }
     
@@ -941,7 +998,10 @@ class AppService: ObservableObject {
             self.tagSortMode = legacySort ? .alphabetical : .manual
         }
         
-        if let debug = prefs.isDebugMode { self.isDebugMode = debug }
+        if let debug = prefs.isDebugMode { 
+            self.isDebugMode = debug
+            UserDefaults.standard.set(debug, forKey: "isDebugMode")
+        }
 
                 
         

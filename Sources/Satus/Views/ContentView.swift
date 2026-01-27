@@ -165,16 +165,24 @@ struct ContentView: View {
                                             onLaunch: { app in appService.launch(app: app) },
                                             onUpdateSize: { app, size in appService.setSize(size, for: app.id) },
                                             onToggleTag: { app, tag in appService.toggleTag(tag, for: app.id) },
-                                            onAddTag: {
+                                            onAddTag: { app in
                                                 let newTag = appService.addTag(name: "New Tag")
                                                 appService.sidebarSelection = .tag(newTag.id)
                                                 editingTagId = newTag.id
                                                 focusedField = newTag.id
+                                                if let app = app {
+                                                    appService.toggleTag(newTag, for: app.id)
+                                                }
                                             },
                                             onQuit: { app in appService.quitApp(app: app) },
                                             onHide: { app in appService.hiddenAppBundleIDs.insert(app.id) },
                                             onRestore: nil,
-                                            onHoverApp: { name in hoveredAppName = name },
+                                            onHoverApp: { app in 
+                                                hoveredAppName = app?.name 
+                                                if let app = app, appService.triggeredByShortcut {
+                                                    appService.switcherTargetID = app.id
+                                                }
+                                            },
                                             availableTags: appService.tags,
                                             availableWidth: geometry.size.width,
                                             focusedAppID: $appService.focusedAppID
@@ -190,13 +198,21 @@ struct ContentView: View {
                                             availableTags: appService.tags,
                                             iconSize: baseIconSize,
                                             onToggleTag: { app, tag in appService.toggleTag(tag, for: app.id) },
-                                            onAddTag: {
+                                            onAddTag: { app in
                                                 let newTag = appService.addTag(name: "New Tag")
                                                 appService.sidebarSelection = .tag(newTag.id)
                                                 editingTagId = newTag.id
                                                 focusedField = newTag.id
+                                                if let app = app {
+                                                    appService.toggleTag(newTag, for: app.id)
+                                                }
                                             },
-                                            onHoverApp: { name in hoveredAppName = name },
+                                            onHoverApp: { app in 
+                                                hoveredAppName = app?.name 
+                                                if let app = app, appService.triggeredByShortcut {
+                                                    appService.switcherTargetID = app.id
+                                                }
+                                            },
                                             isSandboxed: appService.isSandboxed,
                                             focusedAppID: $appService.focusedAppID
                                         )
@@ -221,7 +237,7 @@ struct ContentView: View {
                                     Divider()
                                         .padding(.vertical, 10)
                                     
-                                    Text("Hidden Apps")
+                                    Text("Hidden Apps (when in Switcher mode)")
                                         .font(.headline)
                                         .foregroundColor(.secondary)
                                         .padding(.horizontal, 35)
@@ -229,14 +245,14 @@ struct ContentView: View {
                                     if appService.viewMode == .grid {
                                         SmartGridView(
                                             items: appService.hiddenRunningApps,
-                                            onLaunch: { _ in }, // Disabled
+                                            onLaunch: { app in appService.launch(app: app) },
                                             onUpdateSize: { app, size in appService.setSize(size, for: app.id) },
                                             onToggleTag: { _, _ in }, // Disabled
-                                            onAddTag: { }, // Disabled
+                                            onAddTag: { _ in }, // Disabled
                                             onQuit: nil,
                                             onHide: nil,
                                             onRestore: { app in appService.unhideApp(app) },
-                                            onHoverApp: { name in hoveredAppName = name },
+                                            onHoverApp: { app in hoveredAppName = app?.name },
                                             availableTags: [], // Hide tags interaction
                                             availableWidth: geometry.size.width,
                                             focusedAppID: .constant(nil) // No focus for hidden
@@ -245,15 +261,15 @@ struct ContentView: View {
                                     } else {
                                         AppListView(
                                             items: appService.hiddenRunningApps,
-                                            onLaunch: { _ in }, // Disabled
+                                            onLaunch: { app in appService.launch(app: app) },
                                             onQuit: nil,
                                             onHide: nil,
                                             onRestore: { app in appService.unhideApp(app) },
                                             availableTags: [], // Hide tags interaction
                                             iconSize: baseIconSize,
                                             onToggleTag: { _, _ in },
-                                            onAddTag: { },
-                                            onHoverApp: { name in hoveredAppName = name },
+                                            onAddTag: { _ in },
+                                            onHoverApp: { app in hoveredAppName = app?.name },
                                             isSandboxed: appService.isSandboxed,
                                             focusedAppID: .constant(nil)
                                         )
@@ -278,16 +294,19 @@ struct ContentView: View {
                                             onToggleTag: { app, tag in
                                                 appService.toggleTag(tag, for: app.id)
                                             },
-                                            onAddTag: {
+                                            onAddTag: { app in
                                                 let newTag = appService.addTag(name: "New Tag")
                                                 appService.sidebarSelection = .tag(newTag.id)
                                                 editingTagId = newTag.id
                                                 focusedField = newTag.id
+                                                if let app = app {
+                                                    appService.toggleTag(newTag, for: app.id)
+                                                }
                                             },
                                             onQuit: nil,
                                             onHide: nil,
                                             onRestore: nil,
-                                            onHoverApp: { name in hoveredAppName = name },
+                                            onHoverApp: { app in hoveredAppName = app?.name },
                                             availableTags: appService.tags,
                                             availableWidth: geometry.size.width,
                                             focusedAppID: $appService.focusedAppID
@@ -308,13 +327,16 @@ struct ContentView: View {
                                             availableTags: appService.tags,
                                             iconSize: baseIconSize,
                                             onToggleTag: { app, tag in appService.toggleTag(tag, for: app.id) },
-                                            onAddTag: {
+                                            onAddTag: { app in
                                                 let newTag = appService.addTag(name: "New Tag")
                                                 appService.sidebarSelection = .tag(newTag.id)
                                                 editingTagId = newTag.id
                                                 focusedField = newTag.id
+                                                if let app = app {
+                                                    appService.toggleTag(newTag, for: app.id)
+                                                }
                                             },
-                                            onHoverApp: { name in hoveredAppName = name },
+                                            onHoverApp: { app in hoveredAppName = app?.name },
                                             isSandboxed: appService.isSandboxed,
                                             focusedAppID: $appService.focusedAppID
                                         )
@@ -571,6 +593,7 @@ struct ContentView: View {
         // Explicitly clear grid focus
         appService.activeFocusZone = .sidebar
         appService.focusedAppID = nil 
+        appService.triggeredByShortcut = false 
     }
     .preferredColorScheme(appService.appTheme == "dark" ? .dark : (appService.appTheme == "light" ? .light : nil))
     }
@@ -589,8 +612,8 @@ struct AppListView: View {
     let iconSize: CGFloat
     let onToggleTag: (AppItem, AppTag) -> Void
 
-    let onAddTag: () -> Void
-    let onHoverApp: (String?) -> Void
+    let onAddTag: (AppItem?) -> Void
+    let onHoverApp: (AppItem?) -> Void
     let isSandboxed: Bool
     
     @Binding var focusedAppID: String?
@@ -647,8 +670,8 @@ struct AppRowView: View {
     let availableTags: [AppTag]
     let iconSize: CGFloat
     let onToggleTag: (AppItem, AppTag) -> Void
-    let onAddTag: () -> Void
-    let onHoverApp: (String?) -> Void
+    let onAddTag: (AppItem?) -> Void
+    let onHoverApp: (AppItem?) -> Void
     let isFocused: Bool
     let isSandboxed: Bool
     
@@ -670,9 +693,15 @@ struct AppRowView: View {
             if !app.tags.isEmpty {
                 HStack(spacing: 4) {
                     ForEach(availableTags.filter { app.tags.contains($0.id) }) { tag in
-                        Circle()
-                            .fill(Color.fromHex(tag.colorHex ?? "#888888"))
-                            .frame(width: 8, height: 8)
+                        Text(tag.name)
+                            .font(.caption2)
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(
+                                Capsule()
+                                    .fill(Color.fromHex(tag.colorHex ?? "#888888"))
+                            )
                             .help(tag.name)
                     }
                 }
@@ -687,7 +716,7 @@ struct AppRowView: View {
         .contentShape(Rectangle())
         .onHover { isHovering in
             hoveredAppId = isHovering ? app.id : nil
-            onHoverApp(isHovering ? app.name : nil)
+            onHoverApp(isHovering ? app : nil)
         }
         .onTapGesture {
             onLaunch(app)
@@ -755,7 +784,7 @@ struct AppRowView: View {
                          }
                      }
                      Divider()
-                     Button("Add New Tag...") { onAddTag() }
+                     Button("Add New Tag...") { onAddTag(app) }
                  } label: {
                      Label("Tags", systemImage: "tag")
                  }

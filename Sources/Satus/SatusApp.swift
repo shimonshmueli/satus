@@ -117,9 +117,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let windowMenu = NSMenu(title: "Window")
         
         let openItem = NSMenuItem(
-            title: "Open Satus",
+            title: "Open Main Window",
             action: #selector(showMainWindow),
-            keyEquivalent: "0"
+            keyEquivalent: "n"
         )
         windowMenu.addItem(openItem)
         windowMenu.addItem(NSMenuItem.separator())
@@ -149,23 +149,37 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSApplication.shared.mainMenu = mainMenu
     }
     
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag {
+            showMainWindow()
+        }
+        return true
+    }
+
     @objc func showMainWindow() {
         NSApplication.shared.activate(ignoringOtherApps: true)
         
-        // Find existing window (even if hidden/closed but not released)
+        // 1. Try to find existing window
         if let window = NSApplication.shared.windows.first(where: { $0.identifier?.rawValue == "MainWindow" }) {
             window.makeKeyAndOrderFront(nil)
-        } else {
-             // Fallback: If for some reason it's gone, try generic activation
-             // (SwiftUI might fail to recreate it here without OpenWindowAction)
-             print("Main Window not found in NSApp.windows")
+            return
         }
+        
+        // 2. If no window, force SwiftUI to recreate it by "launching" ourselves
+        // This is the reliable way to make WindowGroup reappear after last window closed
+        let url = URL(fileURLWithPath: Bundle.main.bundlePath)
+        NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration(), completionHandler: nil)
     }
     
     @objc func showAbout() {
+        let isDebug = UserDefaults.standard.bool(forKey: "isDebugMode")
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
+        
+        let displayVersion = isDebug ? "Version \(version) (Build \(build))" : "Version \(version)"
+        
         let options: [NSApplication.AboutPanelOptionKey: Any] = [
-             .version: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "",
-             .applicationVersion: "", // Hide build number
+             .applicationVersion: displayVersion,
              .credits: NSAttributedString(string: "Copyright © 2026 Shimon Shmueli", attributes: [
                  .font: NSFont.systemFont(ofSize: 11),
                  .foregroundColor: NSColor.secondaryLabelColor

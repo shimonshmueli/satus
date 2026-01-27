@@ -27,11 +27,11 @@ struct SmartGridView: View {
     let onLaunch: (AppItem) -> Void
     let onUpdateSize: (AppItem, AppSize) -> Void
     let onToggleTag: (AppItem, AppTag) -> Void
-    let onAddTag: () -> Void 
+    let onAddTag: (AppItem?) -> Void 
     let onQuit: ((AppItem) -> Void)?
     let onHide: ((AppItem) -> Void)?
     let onRestore: ((AppItem) -> Void)?
-    let onHoverApp: (String?) -> Void
+    let onHoverApp: (AppItem?) -> Void
     let availableTags: [AppTag]
     let availableWidth: CGFloat
     
@@ -124,8 +124,8 @@ struct AppIconView: View {
     let onUpdateSize: (AppItem, AppSize) -> Void
     let onToggleTag: (AppItem, AppTag) -> Void
 
-    let onAddTag: () -> Void
-    let onHoverApp: (String?) -> Void
+    let onAddTag: (AppItem?) -> Void
+    let onHoverApp: (AppItem?) -> Void
     let availableTags: [AppTag]
     let isSandboxed: Bool
     
@@ -152,7 +152,7 @@ struct AppIconView: View {
             .contentShape(Rectangle())
             .onHover { hover in 
                 isHovering = hover 
-                onHoverApp(hover ? app.name : nil)
+                onHoverApp(hover ? app : nil)
             }
 
             Text(app.name)
@@ -231,7 +231,7 @@ struct AppIconView: View {
                     Divider()
                     
                     Button("Add New Tag...") {
-                        onAddTag()
+                        onAddTag(app)
                     }
                 } label: {
                     Label("Tags", systemImage: "tag")
