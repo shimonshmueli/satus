@@ -64,7 +64,14 @@ class GlobalHotkey: ObservableObject {
     
     func checkPermissions() {
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
-        AXIsProcessTrustedWithOptions(options as CFDictionary)
+        let isTrusted = AXIsProcessTrustedWithOptions(options as CFDictionary)
+        
+        // Also explicitly open System Settings to the Accessibility pane
+        if !isTrusted {
+            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+                NSWorkspace.shared.open(url)
+            }
+        }
     }
     
     // MARK: - API

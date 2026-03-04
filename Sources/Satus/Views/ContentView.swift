@@ -1,6 +1,15 @@
 import SwiftUI
 import AppKit
 
+// Window delegate to handle window close events
+class WindowDelegate: NSObject, NSWindowDelegate {
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        // When user clicks the red X button or presses Cmd+W, quit the app
+        NSApplication.shared.terminate(nil)
+        return false // We handle the quit ourselves
+    }
+}
+
 struct ContentView: View {
     @StateObject var appService = AppService()
 
@@ -21,6 +30,7 @@ struct ContentView: View {
     @State private var searchFocusedState: Bool = false
     @FocusState private var isSidebarFocused: Bool
     @State private var headerVerticalOffset: CGFloat = -22
+    @State private var showListViewSwitcherAlert: Bool = false
     
 
     
@@ -30,6 +40,7 @@ struct ContentView: View {
     
     
     @State private var window: NSWindow?
+    @State private var windowDelegate = WindowDelegate()
 
     private func applyDebugConfiguration() {
         guard let window = window, appService.isDebugMode else { return }
@@ -408,7 +419,6 @@ struct ContentView: View {
                 }
             }
         }
-
         // Global Keyboard Event Handling
         .onAppear {
             // Force Sidebar Focus on Launch
@@ -452,6 +462,9 @@ struct ContentView: View {
              window.identifier = NSUserInterfaceItemIdentifier("MainWindow")
              window.isReleasedWhenClosed = false
              // window.isMovableByWindowBackground = true // REMOVED to fix drag conflict
+             
+             // Set delegate to handle window close events (quit app on close)
+             window.delegate = windowDelegate
              
              // Initial Check
              applyDebugConfiguration()
@@ -516,6 +529,12 @@ struct ContentView: View {
                 
                 switch action {
                 case .appSwitcher:
+                    if appService.viewMode == .list {
+                        print("Switcher hotkey pressed but in list mode - playing error beep")
+                        NSSound.beep()
+                        return // Do not trigger switcher
+                    }
+                    
                     // Force distractions off
                     isSidebarFocused = false
                     searchFocusedState = false
@@ -596,12 +615,7 @@ struct ContentView: View {
         appService.triggeredByShortcut = false 
     }
     .preferredColorScheme(appService.appTheme == "dark" ? .dark : (appService.appTheme == "light" ? .light : nil))
-    }
-
-
-
-
-
+}
 struct AppListView: View {
     let items: [AppItem]
     let onLaunch: (AppItem) -> Void
@@ -917,7 +931,7 @@ struct SidebarView: View {
             if let shortcut = appService.appSwitcherShortcutFormatted {
                 VStack(spacing: 0) {
                     Divider()
-                    Text("App Switcher: \(shortcut)")
+                    Text("Switcher Mode: \(shortcut)")
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .padding(.vertical, 8)

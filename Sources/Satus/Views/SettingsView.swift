@@ -3,6 +3,7 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject var appService: AppService
     @Environment(\.dismiss) var dismiss
+    @ObservedObject var hotkeyManager = GlobalHotkey.shared
     
     struct SettingsSnapshot {
         let preferences: AppService.UserPreferences
@@ -65,18 +66,12 @@ struct SettingsView: View {
                     }
                     .pickerStyle(.menu)
                     
-                    if !GlobalHotkey.shared.isAcessibilityTrusted {
-                         VStack(alignment: .leading, spacing: 6) {
-                             HStack {
-                                 Image(systemName: "exclamationmark.triangle.fill")
-                                     .foregroundColor(.yellow)
-                                 Text("Background Access Required")
-                                     .font(.caption)
-                             }
-                             Button("Grant Permissions") {
-                                 GlobalHotkey.shared.checkPermissions()
-                             }
-                             .controlSize(.small)
+                    if !hotkeyManager.isAcessibilityTrusted {
+                         VStack(alignment: .leading, spacing: 4) {
+                             Text("Background Access")
+                             Text("Background access to keyboard shortcuts is required.\nTo grant permission, go to **System Settings > Privacy & Security > Accessibility**")
+                                 .font(.caption)
+                                 .foregroundColor(.secondary)
                          }
                          .padding(.vertical, 4)
                     }
@@ -107,7 +102,7 @@ struct SettingsView: View {
                      if appService.viewMode != .grid {
                          HStack {
                              Image(systemName: "info.circle")
-                             Text("Switcher is disabled in List View")
+                             Text("Switcher Mode is disabled in List View")
                          }
                          .font(.caption)
                          .foregroundColor(.secondary)

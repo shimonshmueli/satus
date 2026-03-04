@@ -43,9 +43,8 @@ class AppService: ObservableObject {
         }
     }
     
-    @Published var defaultTagId: UUID? = nil {
-        didSet { savePreferences() }
-    }
+    @Published var defaultTagId: UUID? = nil
+
     
 
     
@@ -840,8 +839,8 @@ class AppService: ObservableObject {
         case 3:
             return showUtilities ? .navigate(.utilities) : .navigate(.allApps)
         case 6:
-            // Special App Switcher Mode (Grid only)
-            return viewMode == .grid ? .appSwitcher : nil
+            // Special App Switcher Mode (Handle rejection in View)
+            return .appSwitcher
         default:
             if let tagId = shortcutTagMapping[id] {
                 recordTagUsage(id: tagId)
