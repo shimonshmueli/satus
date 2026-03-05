@@ -145,6 +145,40 @@ struct SettingsView: View {
                         Label("Import Tag Associations (JSON)", systemImage: "square.and.arrow.down")
                     }
                     
+                    Divider()
+                    
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Button(action: {
+                                isPrefetching = true
+                                appService.prefetchKeywords()
+                                // Simulate a brief loading state for UX since we do detached fire-and-forget
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                                    isPrefetching = false
+                                }
+                            }) {
+                                Text("Prefetch App Keywords")
+                            }
+                            .disabled(isPrefetching)
+                            
+                            if isPrefetching {
+                                ProgressView()
+                                    .controlSize(.small)
+                                    .padding(.leading, 8)
+                            }
+                        }
+                        
+                        if let date = appService.lastKeywordFetchDate {
+                            Text("Last fetched: \(date, formatter: itemFormatter)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        Text("Keywords are automatically refreshed daily when the app is hidden.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
                     if let status = importStatus {
                         Text(status)
                             .font(.caption)
@@ -212,6 +246,7 @@ struct SettingsView: View {
     @State private var showImporter = false
     @State private var exportDocument: JSONDocument?
     @State private var importStatus: String?
+    @State private var isPrefetching = false
     
     // Debug Mode Sequence: System, System, Dark, Dark, Light, Light
     @State private var themeUnlockQueue: [String] = []
@@ -539,4 +574,12 @@ struct CustomTagShortcutRow: View {
         return GlobalHotkey.shared.formatShortcut(def)
     }
 }
+
+private let itemFormatter: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.dateStyle = .short
+    formatter.timeStyle = .short
+    return formatter
+}()
+
 

@@ -689,7 +689,12 @@ struct AppRowView: View {
     let isFocused: Bool
     let isSandboxed: Bool
     
+    @EnvironmentObject var appService: AppService
     @State private var hoveredAppId: String? = nil
+    
+    private var isRunning: Bool {
+        appService.runningApps.contains(where: { $0.id == app.id })
+    }
     
     var body: some View {
         HStack(spacing: 12) {
@@ -702,6 +707,14 @@ struct AppRowView: View {
                 .foregroundColor(isFocused ? .white : .primary)
             
             Spacer()
+            
+            // Running indicator
+            if isRunning {
+                Image(systemName: "circle.fill")
+                    .font(.system(size: 6))
+                    .foregroundColor(.gray)
+                    .help("Running")
+            }
             
             // Show tags in list?
             if !app.tags.isEmpty {

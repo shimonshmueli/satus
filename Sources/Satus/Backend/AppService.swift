@@ -44,6 +44,14 @@ class AppService: ObservableObject {
     }
     
     @Published var defaultTagId: UUID? = nil
+    
+    // Keyword Cache
+    @Published var appKeywords: [String: [String]] = [:] { // BundleID : Keywords
+        didSet { savePreferences() }
+    }
+    @Published var lastKeywordFetchDate: Date? = nil {
+        didSet { savePreferences() }
+    }
 
     
 
@@ -226,7 +234,16 @@ class AppService: ObservableObject {
         // Detect when App Hide (CMD+H or dock click)
         defaultCenter.addObserver(forName: NSApplication.didHideNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in
-                // self?.readDockTileSize() // Disabled
+                // Trigger keyword prefetch if needed (older than 1 day or nil)
+                guard let self = self else { return }
+                if let lastFetch = self.lastKeywordFetchDate {
+                    let daysSinceFetch = Calendar.current.dateComponents([.day], from: lastFetch, to: Date()).day ?? 0
+                    if daysSinceFetch >= 1 {
+                        self.prefetchKeywords()
+                    }
+                } else {
+                    self.prefetchKeywords()
+                }
             }
         }
         
@@ -403,29 +420,78 @@ class AppService: ObservableObject {
             ]
         }
         
-        // Populate default shortcuts if empty (IDs 4, 5, 6 up to 8 available)
-        // Default: 4->Productivity, 5->Media, 6->Tools
-        if self.shortcutTagMapping.isEmpty {
-            if let prod = tags.first(where: { $0.name == "Productivity" }) {
-                shortcutTagMapping[4] = prod.id
-            }
-            if let media = tags.first(where: { $0.name == "Media" }) {
-                shortcutTagMapping[5] = media.id
-            }
-            if let media = tags.first(where: { $0.name == "Media" }) {
-                shortcutTagMapping[5] = media.id
-            }
-            if let tools = tags.first(where: { $0.name == "Tools" }) {
-                shortcutTagMapping[7] = tools.id
-            }
-        }
-        
-        // Pre-populate App Switcher (ID: 6) with Option+Tab (KeyCode 48) if missing or invalid
         let currentSwitcher = GlobalHotkey.shared.getShortcut(id: 6)
         
         if currentSwitcher == nil || currentSwitcher?.keyCode == 0 {
             print("Pre-populating App Switcher shortcut to Option+Tab (Default)")
             GlobalHotkey.shared.setShortcut(id: 6, keyCode: 48, modifiers: Int(NSEvent.ModifierFlags.option.rawValue))
+        }
+    }
+    
+    // MARK: - Keyword Prefetching
+    func prefetchKeywords() {
+        print("Prefetching keywords for apps in background...")
+        Task.detached(priority: .background) {
+            var fetchedKeywords: [String: [String]] = [:]
+            
+            // Need a snapshot of apps array to process safely in background
+            let currentApps = await self.apps
+            
+            for app in currentApps {
+                var appKeywordsList: [String] = []
+                
+                // 1. MDItem Spotlight attributes
+                if let mdItem = MDItemCreateWithURL(kCFAllocatorDefault, app.url as CFURL) {
+                    if let mdKeywords = MDItemCopyAttribute(mdItem, kMDItemKeywords) as? [String] {
+                        appKeywordsList.append(contentsOf: mdKeywords)
+                    }
+                    if let description = MDItemCopyAttribute(mdItem, kMDItemDescription) as? String, !description.isEmpty {
+                        appKeywordsList.append(description)
+                    }
+                    if let copyright = MDItemCopyAttribute(mdItem, kMDItemCopyright) as? String, !copyright.isEmpty {
+                        // Extract company/dev name from copyright (e.g. "© 2024 Apple Inc." -> "Apple")
+                        let words = copyright.components(separatedBy: .whitespacesAndNewlines)
+                            .filter { $0.count > 2 && !$0.starts(with: "©") && !$0.starts(with: "(") && !CharacterSet.decimalDigits.isSuperset(of: CharacterSet(charactersIn: $0)) }
+                        appKeywordsList.append(contentsOf: words)
+                    }
+                }
+                
+                // 2. Bundle Info.plist metadata
+                if let bundle = Bundle(url: app.url), let info = bundle.infoDictionary {
+                    // App category (e.g. "public.app-category.productivity" -> "productivity")
+                    if let category = info["LSApplicationCategoryType"] as? String {
+                        let categoryName = category.replacingOccurrences(of: "public.app-category.", with: "")
+                            .replacingOccurrences(of: "-", with: " ")
+                        appKeywordsList.append(categoryName)
+                    }
+                    
+                    // Human-readable copyright from Info.plist
+                    if let copyright = info["NSHumanReadableCopyright"] as? String, !copyright.isEmpty {
+                        let words = copyright.components(separatedBy: .whitespacesAndNewlines)
+                            .filter { $0.count > 2 && !$0.starts(with: "©") && !CharacterSet.decimalDigits.isSuperset(of: CharacterSet(charactersIn: $0)) }
+                        appKeywordsList.append(contentsOf: words)
+                    }
+                }
+                
+                // Deduplicate
+                let uniqueKeywords = Array(Set(appKeywordsList.map { $0.lowercased() }))
+                    .filter { !$0.isEmpty }
+                
+                if !uniqueKeywords.isEmpty {
+                    fetchedKeywords[app.id] = uniqueKeywords
+                }
+            }
+            
+            let finalKeywords = fetchedKeywords
+            await MainActor.run {
+                self.appKeywords = finalKeywords
+                self.lastKeywordFetchDate = Date()
+                print("Keyword prefetch complete. Keywords stored for \(finalKeywords.count) apps.")
+                // Log a sample for debugging
+                for (id, kw) in finalKeywords.prefix(5) {
+                    print("  \(id): \(kw)")
+                }
+            }
         }
     }
     
@@ -573,7 +639,7 @@ class AppService: ObservableObject {
         
         let tagSettings = tags.map { AppTagDTO(id: $0.id, name: $0.name, colorHex: $0.colorHex, items: $0.items, usageCount: $0.usageCount) }
         
-        return UserPreferences(tags: tagSettings, appSettings: appSettings, iconScale: iconScale, appTheme: appTheme, viewMode: viewMode, shortcutMapping: shortcutTagMapping, showOpenApps: showOpenApps, showUtilities: showUtilities, hiddenAppBundleIDs: Array(hiddenAppBundleIDs), sortTagsAlphabetically: nil, tagSortMode: tagSortMode, isDebugMode: isDebugMode, defaultTagId: defaultTagId)
+        return UserPreferences(tags: tagSettings, appSettings: appSettings, iconScale: iconScale, appTheme: appTheme, viewMode: viewMode, shortcutMapping: shortcutTagMapping, showOpenApps: showOpenApps, showUtilities: showUtilities, hiddenAppBundleIDs: Array(hiddenAppBundleIDs), sortTagsAlphabetically: nil, tagSortMode: tagSortMode, isDebugMode: isDebugMode, defaultTagId: defaultTagId, appKeywords: appKeywords, lastKeywordFetchDate: lastKeywordFetchDate)
     }
 
     func restorePreferences(_ prefs: UserPreferences) {
@@ -592,6 +658,8 @@ class AppService: ObservableObject {
         }
         if let debug = prefs.isDebugMode { self.isDebugMode = debug }
         if let defaultTag = prefs.defaultTagId { self.defaultTagId = defaultTag }
+        if let keywords = prefs.appKeywords { self.appKeywords = keywords }
+        if let fetchDate = prefs.lastKeywordFetchDate { self.lastKeywordFetchDate = fetchDate }
 
         
         // Restore Tags
@@ -679,7 +747,28 @@ class AppService: ObservableObject {
     
     func getGridApps(searchText: String) -> [AppItem] {
         if !searchText.isEmpty {
-            return apps.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+            let matchedApps = apps.filter { app in
+                // Check name match
+                if app.name.isFuzzyMatch(with: searchText) { return true }
+                
+                // Check pre-fetched keywords
+                if let keywords = appKeywords[app.id] {
+                    for keyword in keywords {
+                        if keyword.isFuzzyMatch(with: searchText) { return true }
+                    }
+                }
+                return false
+            }
+            
+            return matchedApps.sorted { appA, appB in
+                let scoreA = appA.name.fuzzyMatchScore(with: searchText)
+                let scoreB = appB.name.fuzzyMatchScore(with: searchText)
+                
+                if scoreA != scoreB {
+                    return scoreA > scoreB
+                }
+                return appA.name.localizedStandardCompare(appB.name) == .orderedAscending
+            }
         }
         
         guard let sel = sidebarSelection else { return apps }
@@ -868,6 +957,8 @@ class AppService: ObservableObject {
         let tagSortMode: TagSortMode?
         let isDebugMode: Bool?
         let defaultTagId: UUID?
+        let appKeywords: [String: [String]]?
+        let lastKeywordFetchDate: Date?
     }
     
     struct ExportManifest: Codable {
@@ -1003,6 +1094,12 @@ class AppService: ObservableObject {
         }
 
                 
+        if let keywords = prefs.appKeywords {
+            self.appKeywords = keywords
+        }
+        if let fetchDate = prefs.lastKeywordFetchDate {
+            self.lastKeywordFetchDate = fetchDate
+        }
         
         self.tags = prefs.tags.map {
             var t = AppTag(id: $0.id, name: $0.name, colorHex: $0.colorHex, items: $0.items)
