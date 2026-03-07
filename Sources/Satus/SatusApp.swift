@@ -51,7 +51,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
             
             if NSApplication.shared.isActive {
-                NSApplication.shared.hide(nil)
+                if AppService.shared?.isPinned != true {
+                    NSApplication.shared.hide(nil)
+                }
             }
         }
         
@@ -207,6 +209,43 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         helpWindow?.makeKeyAndOrderFront(nil)
         NSApplication.shared.activate(ignoringOtherApps: true)
     }
+    
+    // MARK: - Dock Menu
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
+        let menu = NSMenu()
+        
+        // Add tags from AppService
+        if let appService = AppService.shared {
+            let tags = appService.displayTags
+            if !tags.isEmpty {
+                for tag in tags {
+                    let item = NSMenuItem(
+                        title: tag.name,
+                        action: #selector(dockMenuTagClicked(_:)),
+                        keyEquivalent: ""
+                    )
+                    item.representedObject = tag.id
+                    item.target = self
+                    menu.addItem(item)
+                }
+            }
+        }
+        
+        return menu
+    }
+    
+    @objc func dockMenuTagClicked(_ sender: NSMenuItem) {
+        guard let tagId = sender.representedObject as? UUID else { return }
+        
+        // Activate and show main window
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        showMainWindow()
+        
+        // Navigate to the selected tag
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            AppService.shared?.sidebarSelection = .tag(tagId)
+        }
+    }
 }
 
 @main
@@ -222,7 +261,9 @@ struct SatusApp: App {
                     // Previous logic moved to ContentView to access AppService
                 }
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
-                     NSApplication.shared.hide(nil)
+                    if AppService.shared?.isPinned != true {
+                        NSApplication.shared.hide(nil)
+                    }
                 }
         }
         .windowStyle(.hiddenTitleBar)

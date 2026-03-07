@@ -129,6 +129,15 @@ struct ContentView: View {
 
                         
                         
+                        Button(action: { appService.isPinned.toggle() }) {
+                            Image(systemName: appService.isPinned ? "pin.fill" : "pin")
+                                .foregroundColor(appService.isPinned ? .accentColor : .secondary)
+                                .font(.title2)
+                                .frame(height: 28)
+                        }
+                        .buttonStyle(.plain)
+                        .help(appService.isPinned ? "Unpin window (allow auto-close)" : "Pin window (prevent auto-close)")
+                        
                         Button(action: { showSettings = true }) {
                             Image(systemName: "gearshape")
                                 .foregroundColor(.secondary)
@@ -243,49 +252,14 @@ struct ContentView: View {
                                     return true
                                 }
                                 
-                                // 2. Hidden Apps
-                                if !appService.hiddenRunningApps.isEmpty {
-                                    Divider()
-                                        .padding(.vertical, 10)
-                                    
-                                    Text("Hidden Apps (when in Switcher mode)")
-                                        .font(.headline)
-                                        .foregroundColor(.secondary)
-                                        .padding(.horizontal, 35)
-                                    
-                                    if appService.viewMode == .grid {
-                                        SmartGridView(
-                                            items: appService.hiddenRunningApps,
-                                            onLaunch: { app in appService.launch(app: app) },
-                                            onUpdateSize: { app, size in appService.setSize(size, for: app.id) },
-                                            onToggleTag: { _, _ in }, // Disabled
-                                            onAddTag: { _ in }, // Disabled
-                                            onQuit: nil,
-                                            onHide: nil,
-                                            onRestore: { app in appService.unhideApp(app) },
-                                            onHoverApp: { app in hoveredAppName = app?.name },
-                                            availableTags: [], // Hide tags interaction
-                                            availableWidth: geometry.size.width,
-                                            focusedAppID: .constant(nil) // No focus for hidden
-                                        )
-                                        .environmentObject(appService)
-                                    } else {
-                                        AppListView(
-                                            items: appService.hiddenRunningApps,
-                                            onLaunch: { app in appService.launch(app: app) },
-                                            onQuit: nil,
-                                            onHide: nil,
-                                            onRestore: { app in appService.unhideApp(app) },
-                                            availableTags: [], // Hide tags interaction
-                                            iconSize: baseIconSize,
-                                            onToggleTag: { _, _ in },
-                                            onAddTag: { _ in },
-                                            onHoverApp: { app in hoveredAppName = app?.name },
-                                            isSandboxed: appService.isSandboxed,
-                                            focusedAppID: .constant(nil)
-                                        )
-                                    }
-                                }
+                                // 2. Hidden Apps (drop zone always visible)
+                                HiddenAppsDropZone(
+                                    appService: appService,
+                                    viewMode: appService.viewMode,
+                                    baseIconSize: baseIconSize,
+                                    availableWidth: geometry.size.width,
+                                    hoveredAppName: $hoveredAppName
+                                )
                                 
                             } else {
                                 // Default View for other selections
@@ -616,6 +590,80 @@ struct ContentView: View {
     }
     .preferredColorScheme(appService.appTheme == "dark" ? .dark : (appService.appTheme == "light" ? .light : nil))
 }
+
+struct HiddenAppsDropZone: View {
+    @ObservedObject var appService: AppService
+    let viewMode: AppViewMode
+    let baseIconSize: CGFloat
+    let availableWidth: CGFloat
+    @Binding var hoveredAppName: String?
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            if !appService.hiddenRunningApps.isEmpty {
+                Divider()
+                    .padding(.vertical, 10)
+                
+                Text("Hidden Apps (when in Switcher mode)")
+                    .font(.headline)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 35)
+                
+                if viewMode == .grid {
+                    SmartGridView(
+                        items: appService.hiddenRunningApps,
+                        onLaunch: { app in appService.launch(app: app) },
+                        onUpdateSize: { app, size in appService.setSize(size, for: app.id) },
+                        onToggleTag: { _, _ in },
+                        onAddTag: { _ in },
+                        onQuit: nil,
+                        onHide: nil,
+                        onRestore: { app in appService.unhideApp(app) },
+                        onHoverApp: { app in hoveredAppName = app?.name },
+                        availableTags: [],
+                        availableWidth: availableWidth,
+                        focusedAppID: .constant(nil)
+                    )
+                    .environmentObject(appService)
+                } else {
+                    AppListView(
+                        items: appService.hiddenRunningApps,
+                        onLaunch: { app in appService.launch(app: app) },
+                        onQuit: nil,
+                        onHide: nil,
+                        onRestore: { app in appService.unhideApp(app) },
+                        availableTags: [],
+                        iconSize: baseIconSize,
+                        onToggleTag: { _, _ in },
+                        onAddTag: { _ in },
+                        onHoverApp: { app in hoveredAppName = app?.name },
+                        isSandboxed: appService.isSandboxed,
+                        focusedAppID: .constant(nil)
+                    )
+                }
+            }
+            
+            // Invisible spacer to ensure there's always a drop target area
+            Color.clear
+                .frame(maxWidth: .infinity)
+                .frame(height: 60)
+        }
+        .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+            for provider in providers {
+                _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                    guard let url = url else { return }
+                    Task { @MainActor in
+                        if let app = appService.runningApps.first(where: { $0.url.path == url.path }) {
+                            appService.hiddenAppBundleIDs.insert(app.id)
+                        }
+                    }
+                }
+            }
+            return true
+        }
+    }
+}
+
 struct AppListView: View {
     let items: [AppItem]
     let onLaunch: (AppItem) -> Void

@@ -4,6 +4,11 @@ import ServiceManagement
 
 @MainActor
 class AppService: ObservableObject {
+    static weak var shared: AppService?
+    
+    // Pin mode: prevents auto-close when active
+    @Published var isPinned: Bool = false
+    
     @Published var apps: [AppItem] = []
     @Published var tags: [AppTag] = []
     
@@ -210,6 +215,7 @@ class AppService: ObservableObject {
         self.sidebarSelection = .allApps
         self.focusedAppID = nil
         
+        AppService.shared = self
     }
     
     // Sandbox State
@@ -276,7 +282,9 @@ class AppService: ObservableObject {
                       }
                  }
                  
-                 NSApplication.shared.hide(nil)
+                 if !self.isPinned {
+                     NSApplication.shared.hide(nil)
+                 }
                  return nil
             }
             
