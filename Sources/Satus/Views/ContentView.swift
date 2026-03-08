@@ -186,7 +186,7 @@ struct ContentView: View {
                                             onUpdateSize: { app, size in appService.setSize(size, for: app.id) },
                                             onToggleTag: { app, tag in appService.toggleTag(tag, for: app.id) },
                                             onAddTag: { app in
-                                                let newTag = appService.addTag(name: "New Tag")
+                                                guard let newTag = appService.addTag(name: "New Tag") else { return }
                                                 appService.sidebarSelection = .tag(newTag.id)
                                                 editingTagId = newTag.id
                                                 focusedField = newTag.id
@@ -219,7 +219,7 @@ struct ContentView: View {
                                             iconSize: baseIconSize,
                                             onToggleTag: { app, tag in appService.toggleTag(tag, for: app.id) },
                                             onAddTag: { app in
-                                                let newTag = appService.addTag(name: "New Tag")
+                                                guard let newTag = appService.addTag(name: "New Tag") else { return }
                                                 appService.sidebarSelection = .tag(newTag.id)
                                                 editingTagId = newTag.id
                                                 focusedField = newTag.id
@@ -280,7 +280,7 @@ struct ContentView: View {
                                                 appService.toggleTag(tag, for: app.id)
                                             },
                                             onAddTag: { app in
-                                                let newTag = appService.addTag(name: "New Tag")
+                                                guard let newTag = appService.addTag(name: "New Tag") else { return }
                                                 appService.sidebarSelection = .tag(newTag.id)
                                                 editingTagId = newTag.id
                                                 focusedField = newTag.id
@@ -313,7 +313,7 @@ struct ContentView: View {
                                             iconSize: baseIconSize,
                                             onToggleTag: { app, tag in appService.toggleTag(tag, for: app.id) },
                                             onAddTag: { app in
-                                                let newTag = appService.addTag(name: "New Tag")
+                                                guard let newTag = appService.addTag(name: "New Tag") else { return }
                                                 appService.sidebarSelection = .tag(newTag.id)
                                                 editingTagId = newTag.id
                                                 focusedField = newTag.id
@@ -653,7 +653,8 @@ struct HiddenAppsDropZone: View {
                 _ = provider.loadObject(ofClass: URL.self) { url, _ in
                     guard let url = url else { return }
                     Task { @MainActor in
-                        if let app = appService.runningApps.first(where: { $0.url.path == url.path }) {
+                        if appService.canHideApp,
+                           let app = appService.runningApps.first(where: { $0.url.path == url.path }) {
                             appService.hiddenAppBundleIDs.insert(app.id)
                         }
                     }
@@ -826,9 +827,16 @@ struct AppRowView: View {
                  }
                  
                  if let onHide = onHide {
-                      Button(action: { onHide(app) }) {
-                          Label("Hide \(app.name)", systemImage: "eye.slash")
-                      }
+                     if AppService.isPro || appService.canHideApp {
+                         Button(action: { onHide(app) }) {
+                             Label("Hide \(app.name)", systemImage: "eye.slash")
+                         }
+                     } else {
+                         Button(action: {}) {
+                             Label("Hide \(app.name)  ⌈PRO⌋", systemImage: "eye.slash")
+                         }
+                         .disabled(true)
+                     }
                  }
                  
                  Divider()
@@ -976,15 +984,27 @@ struct SidebarView: View {
                         : nil)
                 
                 Button(action: {
-                    let newTag = appService.addTag(name: "New Tag")
+                    guard let newTag = appService.addTag(name: "New Tag") else { return }
                     selection = .tag(newTag.id)
                     editingTagId = newTag.id
                     focusedField = newTag.id
                 }) {
-                    Label("Add New Tag...", systemImage: "plus.circle")
-                        .foregroundColor(.secondary)
+                    HStack {
+                        Label("Add New Tag...", systemImage: "plus.circle")
+                        if !appService.canAddTag {
+                            Text("PRO")
+                                .font(.caption2)
+                                .fontWeight(.bold)
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Capsule().fill(Color.orange))
+                        }
+                    }
+                    .foregroundColor(.secondary)
                 }
                 .buttonStyle(.plain)
+                .disabled(!appService.canAddTag)
             }
         }
         .focused($isSidebarFocused)

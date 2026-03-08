@@ -6,6 +6,25 @@ import ServiceManagement
 class AppService: ObservableObject {
     static weak var shared: AppService?
     
+    // MARK: - Pro/Free Version Gating
+    static var isPro: Bool {
+        #if SATUS_PRO
+        return true
+        #else
+        return false
+        #endif
+    }
+    static let freeTagLimit = 3
+    static let freeHiddenAppLimit = 3
+    
+    var canAddTag: Bool {
+        AppService.isPro || tags.count < AppService.freeTagLimit
+    }
+    
+    var canHideApp: Bool {
+        AppService.isPro || hiddenAppBundleIDs.count < AppService.freeHiddenAppLimit
+    }
+    
     // Pin mode: prevents auto-close when active
     @Published var isPinned: Bool = false
     
@@ -561,7 +580,8 @@ class AppService: ObservableObject {
     
     // createGroup removed
     
-    func addTag(name: String) -> AppTag {
+    func addTag(name: String) -> AppTag? {
+        guard canAddTag else { return nil }
         let newTag = AppTag(name: name)
         tags.append(newTag)
         savePreferences()

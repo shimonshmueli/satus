@@ -5,6 +5,7 @@ set -e
 BUILD_MODE="debug"
 BUNDLE_ID_SUFFIX=".dev"
 DO_CLEAN=false
+IS_PRO=false
 
 # 0. Parse Arguments
 for arg in "$@"
@@ -18,6 +19,10 @@ do
         --clean|--virgin)
             DO_CLEAN=true
             echo "🧹 Virgin Mode enabled: Cleaning local data..."
+            ;;
+        --pro)
+            IS_PRO=true
+            echo "📣 Building PRO version (Satus Developer)"
             ;;
     esac
 done
@@ -37,17 +42,30 @@ if [ "$DO_CLEAN" = true ]; then
 fi
 
 # 0. Quit Existing App
-echo "Quitting Satus if running..."
-pkill -x "Satus" || true
+if [ "$IS_PRO" = true ]; then
+    echo "Quitting Satus Developer if running..."
+    pkill -x "Satus" || true  # Binary name is still Satus
+else
+    echo "Quitting Satus if running..."
+    pkill -x "Satus" || true
+fi
 pkill -x "AppLibrary" || true # Cleanup old name too
 sleep 1
 
 # 1. Build
 echo "Building Satus ($BUILD_MODE)..."
-swift build -c "$BUILD_MODE"
+if [ "$IS_PRO" = true ]; then
+    swift build -c "$BUILD_MODE" -Xswiftc -DSATUS_PRO
+else
+    swift build -c "$BUILD_MODE"
+fi
 
 # 2. Bundle Structure
-APP_NAME="Satus.app"
+if [ "$IS_PRO" = true ]; then
+    APP_NAME="Satus Developer.app"
+else
+    APP_NAME="Satus.app"
+fi
 mkdir -p "$APP_NAME/Contents/MacOS"
 mkdir -p "$APP_NAME/Contents/Resources"
 
@@ -65,8 +83,13 @@ if [ -f "Sources/Satus/Resources/AppIcon.icns" ]; then
     cp "Sources/Satus/Resources/AppIcon.icns" "$APP_NAME/Contents/Resources/AppIcon.icns"
 fi
 
-if [[ -n "$BUNDLE_ID_SUFFIX" ]]; then
-    # Update Bundle ID for isolation (Requires plutil)
+if [ "$IS_PRO" = true ]; then
+    # Pro version: set distinct bundle ID and display name
+    plutil -replace CFBundleIdentifier -string "com.shimonshmueli.SatusDeveloper${BUNDLE_ID_SUFFIX}" "$APP_NAME/Contents/Info.plist"
+    plutil -replace CFBundleName -string "Satus Developer" "$APP_NAME/Contents/Info.plist"
+    echo "✅ Pro Bundle ID: com.shimonshmueli.SatusDeveloper${BUNDLE_ID_SUFFIX}"
+elif [[ -n "$BUNDLE_ID_SUFFIX" ]]; then
+    # Free debug: append .dev suffix
     ORIGINAL_ID=$(defaults read "$(pwd)/Sources/Satus/Info.plist" CFBundleIdentifier)
     NEW_ID="${ORIGINAL_ID}${BUNDLE_ID_SUFFIX}"
     plutil -replace CFBundleIdentifier -string "$NEW_ID" "$APP_NAME/Contents/Info.plist"

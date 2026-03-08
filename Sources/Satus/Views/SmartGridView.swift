@@ -129,6 +129,7 @@ struct AppIconView: View {
     let availableTags: [AppTag]
     let isSandboxed: Bool
     
+    @EnvironmentObject var appService: AppService
     @State private var isHovering = false
     
     var body: some View {
@@ -195,8 +196,15 @@ struct AppIconView: View {
                 }
                 
                 if let onHide = onHide {
-                    Button(action: { onHide(app) }) {
-                       Label("Hide \(app.name)", systemImage: "eye.slash")
+                    if AppService.isPro || appService.canHideApp {
+                        Button(action: { onHide(app) }) {
+                           Label("Hide \(app.name)", systemImage: "eye.slash")
+                        }
+                    } else {
+                        Button(action: {}) {
+                            Label("Hide \(app.name)  ⌈PRO⌋", systemImage: "eye.slash")
+                        }
+                        .disabled(true)
                     }
                 }
 

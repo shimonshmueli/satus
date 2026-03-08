@@ -138,11 +138,19 @@ struct SettingsView: View {
                     }) {
                         Label("Export Tag Associations (JSON)", systemImage: "square.and.arrow.up")
                     }
+                    .disabled(!AppService.isPro)
                     
                     Button(action: {
                         showImporter = true
                     }) {
                         Label("Import Tag Associations (JSON)", systemImage: "square.and.arrow.down")
+                    }
+                    .disabled(!AppService.isPro)
+                    
+                    if !AppService.isPro {
+                        Text("Export & Import available in Satus Developer")
+                            .font(.caption)
+                            .foregroundColor(.orange)
                     }
                     
                     Divider()
