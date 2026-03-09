@@ -107,7 +107,7 @@ class GlobalHotkey: ObservableObject {
     
     func restoreShortcuts(_ shortcuts: [HotKeyDefinition]) {
         // 1. Unregister all currently active
-        for (id, ref) in hotKeyRefs {
+        for (_, ref) in hotKeyRefs {
             UnregisterEventHotKey(ref)
         }
         hotKeyRefs.removeAll()

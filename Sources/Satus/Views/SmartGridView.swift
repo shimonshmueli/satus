@@ -238,8 +238,18 @@ struct AppIconView: View {
                     
                     Divider()
                     
-                    Button("Add New Tag...") {
-                        onAddTag(app)
+                    if appService.canAddTag {
+                        Button("Add New Tag...") {
+                            onAddTag(app)
+                        }
+                    } else {
+                        Button(action: {}) {
+                            HStack {
+                                Text("Add New Tag...")
+                                Text("⌈PRO⌋")
+                            }
+                        }
+                        .disabled(true)
                     }
                 } label: {
                     Label("Tags", systemImage: "tag")

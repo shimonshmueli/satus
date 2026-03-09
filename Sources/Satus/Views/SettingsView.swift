@@ -59,6 +59,7 @@ struct SettingsView: View {
                     Divider()
                     Toggle("Show Open Apps", isOn: $appService.showOpenApps)
                     Toggle("Show Utilities", isOn: $appService.showUtilities)
+                    Toggle("Show Tag App Count", isOn: $appService.showTagCount)
                     Picker("Sort Tags", selection: $appService.tagSortMode) {
                         Text("Manual").tag(TagSortMode.manual)
                         Text("Alphabetical").tag(TagSortMode.alphabetical)
@@ -130,27 +131,45 @@ struct SettingsView: View {
                 }
                 
                 Section("Data Management") {
-                    Button(action: {
-                        if let json = appService.exportData() {
-                            exportDocument = JSONDocument(jsonString: json)
-                            showExporter = true
+                    HStack {
+                        Button(action: {
+                            if let json = appService.exportData() {
+                                exportDocument = JSONDocument(jsonString: json)
+                                showExporter = true
+                            }
+                        }) {
+                            Label("Export Tag Associations (JSON)", systemImage: "square.and.arrow.up")
                         }
-                    }) {
-                        Label("Export Tag Associations (JSON)", systemImage: "square.and.arrow.up")
+                        .disabled(!AppService.isPro)
+                        
+                        if !AppService.isPro {
+                            Text("PRO")
+                                .font(.caption2)
+                                .fontWeight(.bold)
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Capsule().fill(Color.orange))
+                        }
                     }
-                    .disabled(!AppService.isPro)
                     
-                    Button(action: {
-                        showImporter = true
-                    }) {
-                        Label("Import Tag Associations (JSON)", systemImage: "square.and.arrow.down")
-                    }
-                    .disabled(!AppService.isPro)
-                    
-                    if !AppService.isPro {
-                        Text("Export & Import available in Satus Developer")
-                            .font(.caption)
-                            .foregroundColor(.orange)
+                    HStack {
+                        Button(action: {
+                            showImporter = true
+                        }) {
+                            Label("Import Tag Associations (JSON)", systemImage: "square.and.arrow.down")
+                        }
+                        .disabled(!AppService.isPro)
+                        
+                        if !AppService.isPro {
+                            Text("PRO")
+                                .font(.caption2)
+                                .fontWeight(.bold)
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Capsule().fill(Color.orange))
+                        }
                     }
                     
                     Divider()
@@ -196,7 +215,7 @@ struct SettingsView: View {
                 
                 Section("About") {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Version 1.1")
+                        Text("Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "Unknown")")
                         Text("© 2025 Shimon Shmueli")
                     }
                     .font(.caption)

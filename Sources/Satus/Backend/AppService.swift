@@ -50,6 +50,9 @@ class AppService: ObservableObject {
     @Published var showUtilities: Bool = true {
         didSet { savePreferences() }
     }
+    @Published var showTagCount: Bool = true {
+        didSet { savePreferences() }
+    }
     
     // Hidden Apps (excluded from Open Apps view)
     @Published var hiddenAppBundleIDs: Set<String> = [] {
@@ -133,7 +136,9 @@ class AppService: ObservableObject {
         debounceTimer?.invalidate()
         debounceTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { [weak self] _ in
             print("App Directory Changed. Reloading apps...")
-            self?.loadApps()
+            Task { @MainActor in
+                self?.loadApps()
+            }
         }
     }
     
@@ -208,7 +213,6 @@ class AppService: ObservableObject {
         print("🚀 AppService init start")
         if let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
             let appDir = appSupport.appendingPathComponent("AppLibrary")
-            try? fileManager.createDirectory(at: appDir, withIntermediateDirectories: true)
             try? fileManager.createDirectory(at: appDir, withIntermediateDirectories: true)
             
             // Debug / Dev Isolation
@@ -290,7 +294,7 @@ class AppService: ObservableObject {
         eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self = self else { return event }
             let key = event.keyCode
-            print("DEBUG: Key Down: \(key), Zone: \(self.activeFocusZone)")
+            if self.isDebugMode { print("DEBUG: Key Down: \(key), Zone: \(self.activeFocusZone)") }
             
             // Priority Check: Escape (53) should always trigger, regardless of focus
             if key == 53 {
@@ -325,7 +329,7 @@ class AppService: ObservableObject {
                 
             case 48: // Tab
                 if self.activeFocusZone == .sidebar {
-                    print("DEBUG: Tab from Sidebar -> Search")
+                    if self.isDebugMode { print("DEBUG: Tab from Sidebar -> Search") }
                     self.activeFocusZone = .search
                     self.sidebarSelection = .allApps // Ensure we search all apps
                     return nil // Consume event
@@ -400,7 +404,7 @@ class AppService: ObservableObject {
     
     // MARK: - Discovery
     func loadApps() {
-        print("Scaning for applications...")
+        print("Scanning for applications...")
         var discoveredApps: [AppItem] = []
         
         let appsPath = "/Applications"
@@ -560,7 +564,7 @@ class AppService: ObservableObject {
     func launch(app: AppItem) {
         triggeredByShortcut = false
         // Prevent ghosting on return
-        if let id = switcherTargetID {
+        if switcherTargetID != nil {
             switcherTargetID = nil 
         }
         
@@ -568,13 +572,13 @@ class AppService: ObservableObject {
     }
     
     func quitApp(app: AppItem) {
-        print("DEBUG: Attempting to quit app: \(app.name) (\(app.id))")
+        if isDebugMode { print("DEBUG: Attempting to quit app: \(app.name) (\(app.id))") }
         let running = NSWorkspace.shared.runningApplications
         if let target = running.first(where: { $0.bundleIdentifier == app.id }) {
             let success = target.terminate()
-            print("DEBUG: Terminate called on \(app.name). Success: \(success)")
+            if isDebugMode { print("DEBUG: Terminate called on \(app.name). Success: \(success)") }
         } else {
-             print("DEBUG: Could not find running app for \(app.id)")
+             if isDebugMode { print("DEBUG: Could not find running app for \(app.id)") }
         }
     }
     
@@ -592,7 +596,7 @@ class AppService: ObservableObject {
         if let index = tags.firstIndex(where: { $0.id == id }) {
             var tag = tags[index]
             tag.usageCount += 1
-            print("DEBUG: Tag '\(tag.name)' usage incremented to \(tag.usageCount)")
+            if isDebugMode { print("DEBUG: Tag '\(tag.name)' usage incremented to \(tag.usageCount)") }
             tags[index] = tag
             savePreferences()
         }
@@ -601,6 +605,14 @@ class AppService: ObservableObject {
     func renameTag(id: UUID, newName: String) {
         guard let index = tags.firstIndex(where: { $0.id == id }) else { return }
         tags[index] = AppTag(id: tags[index].id, name: newName, colorHex: tags[index].colorHex, items: tags[index].items)
+        savePreferences()
+    }
+    
+    func setTagColor(id: UUID, colorHex: String?) {
+        guard let index = tags.firstIndex(where: { $0.id == id }) else { return }
+        var tag = tags[index]
+        tag.colorHex = colorHex
+        tags[index] = tag
         savePreferences()
     }
     
@@ -667,7 +679,7 @@ class AppService: ObservableObject {
         
         let tagSettings = tags.map { AppTagDTO(id: $0.id, name: $0.name, colorHex: $0.colorHex, items: $0.items, usageCount: $0.usageCount) }
         
-        return UserPreferences(tags: tagSettings, appSettings: appSettings, iconScale: iconScale, appTheme: appTheme, viewMode: viewMode, shortcutMapping: shortcutTagMapping, showOpenApps: showOpenApps, showUtilities: showUtilities, hiddenAppBundleIDs: Array(hiddenAppBundleIDs), sortTagsAlphabetically: nil, tagSortMode: tagSortMode, isDebugMode: isDebugMode, defaultTagId: defaultTagId, appKeywords: appKeywords, lastKeywordFetchDate: lastKeywordFetchDate)
+        return UserPreferences(tags: tagSettings, appSettings: appSettings, iconScale: iconScale, appTheme: appTheme, viewMode: viewMode, shortcutMapping: shortcutTagMapping, showOpenApps: showOpenApps, showUtilities: showUtilities, showTagCount: showTagCount, hiddenAppBundleIDs: Array(hiddenAppBundleIDs), sortTagsAlphabetically: nil, tagSortMode: tagSortMode, isDebugMode: isDebugMode, defaultTagId: defaultTagId, appKeywords: appKeywords, lastKeywordFetchDate: lastKeywordFetchDate)
     }
 
     func restorePreferences(_ prefs: UserPreferences) {
@@ -716,16 +728,17 @@ class AppService: ObservableObject {
             try await Task.sleep(nanoseconds: 1_000_000_000) // 1s Debounce
             if Task.isCancelled { return }
             
-            print("DEBUG: Capturing state for save at \(Date())")
+            if isDebugMode { print("DEBUG: Capturing state for save at \(Date())") }
             guard let url = persistenceURL else { return }
             
             let prefs = getPreferencesSnapshot()
+            let debugMode = isDebugMode
             
             saveQueue.async {
                 do {
                     let data = try JSONEncoder().encode(prefs)
                     try data.write(to: url)
-                    print("DEBUG: Save completed at \(Date())")
+                    if debugMode { print("DEBUG: Save completed at \(Date())") }
                 } catch {
                     print("Failed to save: \(error)")
                 }
@@ -980,6 +993,7 @@ class AppService: ObservableObject {
         
         let showOpenApps: Bool?
         let showUtilities: Bool?
+        let showTagCount: Bool?
         let hiddenAppBundleIDs: [String]?
         let sortTagsAlphabetically: Bool?
         let tagSortMode: TagSortMode?
@@ -1107,7 +1121,16 @@ class AppService: ObservableObject {
         
         if let showOpen = prefs.showOpenApps { self.showOpenApps = showOpen }
         if let showUtils = prefs.showUtilities { self.showUtilities = showUtils }
-        if let hiddenIDs = prefs.hiddenAppBundleIDs { self.hiddenAppBundleIDs = Set(hiddenIDs) }
+        if let showCount = prefs.showTagCount { self.showTagCount = showCount }
+        if let hiddenIDs = prefs.hiddenAppBundleIDs {
+            var loadedIDs = Set(hiddenIDs)
+            // Enforce free-tier limit: if hidden apps exceed the limit (leftover from PRO),
+            // clear them all since they weren't created under the free tier
+            if !AppService.isPro && loadedIDs.count > AppService.freeHiddenAppLimit {
+                loadedIDs.removeAll()
+            }
+            self.hiddenAppBundleIDs = loadedIDs
+        }
         
         // Migration: sortTagsAlphabetically -> tagSortMode
         if let mode = prefs.tagSortMode {

@@ -867,7 +867,17 @@ struct AppRowView: View {
                          }
                      }
                      Divider()
-                     Button("Add New Tag...") { onAddTag(app) }
+                     if appService.canAddTag {
+                         Button("Add New Tag...") { onAddTag(app) }
+                     } else {
+                         Button(action: {}) {
+                             HStack {
+                                 Text("Add New Tag...")
+                                 Text("⌈PRO⌋")
+                             }
+                         }
+                         .disabled(true)
+                     }
                  } label: {
                      Label("Tags", systemImage: "tag")
                  }
@@ -1034,6 +1044,17 @@ struct TagRow: View {
     @State private var isTargeted = false
     @State private var showDeleteConfirmation = false
     
+    private func colorSwatch(hex: String) -> NSImage {
+        let size = NSSize(width: 12, height: 12)
+        let image = NSImage(size: size)
+        image.lockFocus()
+        NSColor(Color.fromHex(hex)).setFill()
+        NSBezierPath(ovalIn: NSRect(origin: .zero, size: size)).fill()
+        image.unlockFocus()
+        image.isTemplate = false
+        return image
+    }
+    
     var body: some View {
         HStack {
             if editingTagId == tag.id {
@@ -1046,8 +1067,22 @@ struct TagRow: View {
                     editingTagId = nil
                 }
             } else {
-                Text(tag.name)
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(Color.fromHex(tag.colorHex ?? "#888888"))
+                        .frame(width: 8, height: 8)
+                    Text(tag.name)
+                }
                 Spacer()
+                
+                if appService.showTagCount {
+                    Text("\(appService.apps.filter { $0.tags.contains(tag.id) }.count)")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1)
+                        .background(Capsule().fill(Color.primary.opacity(0.08)))
+                }
                 
                 if appService.tagSortMode == .manual {
                     // Drag Handle Hint (2 fine lines)
@@ -1080,6 +1115,40 @@ struct TagRow: View {
                 editingTagId = tag.id
                 focusedField = tag.id
             }
+            
+            Menu("Color") {
+                let tagColors: [(String, String)] = [
+                    ("Red", "#FF3B30"),
+                    ("Orange", "#FF9500"),
+                    ("Yellow", "#FFCC00"),
+                    ("Green", "#34C759"),
+                    ("Teal", "#5AC8FA"),
+                    ("Blue", "#007AFF"),
+                    ("Indigo", "#5856D6"),
+                    ("Purple", "#AF52DE"),
+                    ("Pink", "#FF2D55"),
+                    ("Gray", "#8E8E93")
+                ]
+                
+                ForEach(tagColors, id: \.1) { name, hex in
+                    Button(action: { appService.setTagColor(id: tag.id, colorHex: hex) }) {
+                        Label {
+                            Text(name)
+                        } icon: {
+                            Image(nsImage: colorSwatch(hex: hex))
+                        }
+                    }
+                    .disabled(tag.colorHex == hex)
+                }
+                
+                Divider()
+                
+                Button(action: { appService.setTagColor(id: tag.id, colorHex: nil) }) {
+                    Label("No Color", systemImage: "circle.dashed")
+                }
+                .disabled(tag.colorHex == nil)
+            }
+            
             Button("Remove Tag", role: .destructive) {
                 showDeleteConfirmation = true
             }
