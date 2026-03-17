@@ -22,7 +22,7 @@ do
             ;;
         --pro)
             IS_PRO=true
-            echo "📣 Building PRO version (Satus Developer)"
+            echo "📣 Building PRO version (ZoneKey Pro)"
             ;;
     esac
 done
@@ -36,24 +36,24 @@ if [ "$DO_CLEAN" = true ]; then
     echo "💥 Resetting to VIRGIN STATE..."
     rm -f ~/Library/Application\ Support/AppLibrary/user_prefs_dev.json
     rm -f ~/Library/Application\ Support/AppLibrary/user_prefs_v2.json
-    # com.shimonshmueli.Satus
-    defaults delete com.shimonshmueli.Satus 2>/dev/null || echo "   (No defaults found for com.shimonshmueli.Satus)"
+    # com.shimonshmueli.ZoneKey
+    defaults delete com.shimonshmueli.ZoneKey 2>/dev/null || echo "   (No defaults found for com.shimonshmueli.ZoneKey)"
     echo "✅ Clean complete."
 fi
 
 # 0. Quit Existing App
 if [ "$IS_PRO" = true ]; then
-    echo "Quitting Satus Developer if running..."
-    pkill -x "Satus" || true  # Binary name is still Satus
+    echo "Quitting ZoneKey Pro if running..."
+    pkill -x "ZoneKey" || true
 else
-    echo "Quitting Satus if running..."
-    pkill -x "Satus" || true
+    echo "Quitting ZoneKey if running..."
+    pkill -x "ZoneKey" || true
 fi
 pkill -x "AppLibrary" || true # Cleanup old name too
 sleep 1
 
 # 1. Build
-echo "Building Satus ($BUILD_MODE)..."
+echo "Building ZoneKey ($BUILD_MODE)..."
 if [ "$IS_PRO" = true ]; then
     swift build -c "$BUILD_MODE" -Xswiftc -DSATUS_PRO
 else
@@ -62,16 +62,16 @@ fi
 
 # 2. Bundle Structure
 if [ "$IS_PRO" = true ]; then
-    APP_NAME="Satus Developer.app"
+    APP_NAME="ZoneKey Pro.app"
 else
-    APP_NAME="Satus.app"
+    APP_NAME="ZoneKey.app"
 fi
 mkdir -p "$APP_NAME/Contents/MacOS"
 mkdir -p "$APP_NAME/Contents/Resources"
 
 # 3. Copy binary
 echo "Copying binary from .build/$BUILD_MODE/..."
-cp ".build/$BUILD_MODE/Satus" "$APP_NAME/Contents/MacOS/Satus"
+cp ".build/$BUILD_MODE/Satus" "$APP_NAME/Contents/MacOS/ZoneKey"
 
 # 4. Copy and Modify Info.plist
 echo "Copying and Updating Info.plist..."
@@ -85,9 +85,10 @@ fi
 
 if [ "$IS_PRO" = true ]; then
     # Pro version: set distinct bundle ID and display name
-    plutil -replace CFBundleIdentifier -string "com.shimonshmueli.SatusDeveloper${BUNDLE_ID_SUFFIX}" "$APP_NAME/Contents/Info.plist"
-    plutil -replace CFBundleName -string "Satus Developer" "$APP_NAME/Contents/Info.plist"
-    echo "✅ Pro Bundle ID: com.shimonshmueli.SatusDeveloper${BUNDLE_ID_SUFFIX}"
+    plutil -replace CFBundleIdentifier -string "com.shimonshmueli.ZoneKeyPro${BUNDLE_ID_SUFFIX}" "$APP_NAME/Contents/Info.plist"
+    plutil -replace CFBundleName -string "ZoneKey Pro" "$APP_NAME/Contents/Info.plist"
+    plutil -replace CFBundleExecutable -string "ZoneKey" "$APP_NAME/Contents/Info.plist"
+    echo "✅ Pro Bundle ID: com.shimonshmueli.ZoneKeyPro${BUNDLE_ID_SUFFIX}"
 elif [[ -n "$BUNDLE_ID_SUFFIX" ]]; then
     # Free debug: append .dev suffix
     ORIGINAL_ID=$(defaults read "$(pwd)/Sources/Satus/Info.plist" CFBundleIdentifier)
@@ -99,8 +100,8 @@ else
 fi
 
 # 5. Sign (Ad-hoc)
-echo "Signing Satus..."
-codesign --force --sign - "$APP_NAME/Contents/MacOS/Satus"
+echo "Signing ZoneKey..."
+codesign --force --sign - "$APP_NAME/Contents/MacOS/ZoneKey"
 echo "App signed."
 
 # 6. Install

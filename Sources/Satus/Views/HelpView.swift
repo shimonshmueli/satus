@@ -4,21 +4,21 @@ struct HelpView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                Text("Satus Help")
+                Text("ZoneKey Help")
                     .font(.largeTitle)
                     .fontWeight(.bold)
                     .padding(.bottom, 8)
                 
                 Group {
                     SectionHeader(title: "Overview")
-                    Text("Satus is an app launcher and switcher designed for speed and efficiency.")
+                    Text("ZoneKey is an app launcher and switcher designed for speed and efficiency.")
                         .font(.body)
                         .foregroundColor(.secondary)
                     
                     SectionHeader(title: "Navigation")
                     HelpRow(icon: "arrow.up.and.down.and.arrow.left.and.right", title: "Arrow Keys", description: "Navigate between apps and the sidebar.")
                     HelpRow(icon: "return", title: "Enter", description: "Launch the selected app.")
-                    HelpRow(icon: "escape", title: "Escape", description: "Hide Satus.")
+                    HelpRow(icon: "escape", title: "Escape", description: "Hide ZoneKey.")
                     
                     SectionHeader(title: "Search")
                     HelpRow(icon: "magnifyingglass", title: "Type to Search", description: "Just start typing to filter your apps instantly.")

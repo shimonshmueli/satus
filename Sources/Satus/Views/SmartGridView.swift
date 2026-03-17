@@ -198,11 +198,11 @@ struct AppIconView: View {
                 if let onHide = onHide {
                     if AppService.isPro || appService.canHideApp {
                         Button(action: { onHide(app) }) {
-                           Label("Hide \(app.name)", systemImage: "eye.slash")
+                           Label("Skip \(app.name)", systemImage: "eye.slash")
                         }
                     } else {
                         Button(action: {}) {
-                            Label("Hide \(app.name)  ⌈PRO⌋", systemImage: "eye.slash")
+                            Label("Skip \(app.name)  ⌈PRO⌋", systemImage: "eye.slash")
                         }
                         .disabled(true)
                     }

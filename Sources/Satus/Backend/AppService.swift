@@ -199,7 +199,7 @@ class AppService: ObservableObject {
 
     
     private let fileManager = FileManager.default
-    private let saveQueue = DispatchQueue(label: "com.shimonshmueli.Satus.save", qos: .utility)
+    private let saveQueue = DispatchQueue(label: "com.shimonshmueli.ZoneKey.save", qos: .utility)
     private let persistenceURL: URL?
     
     init() {
@@ -299,7 +299,7 @@ class AppService: ObservableObject {
             // Priority Check: Escape (53) should always trigger, regardless of focus
             if key == 53 {
                  if let keyWindow = NSApplication.shared.keyWindow {
-                      if keyWindow.title == "Satus Help" || keyWindow.title.starts(with: "About ") {
+                      if keyWindow.title == "ZoneKey Help" || keyWindow.title.starts(with: "About ") {
                           keyWindow.close()
                           return nil
                       }
@@ -390,7 +390,7 @@ class AppService: ObservableObject {
             try process.run()
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
             if let output = String(data: data, encoding: .utf8) {
-                if output.contains("com.shimonshmueli.Satus") {
+                if output.contains("com.shimonshmueli.ZoneKey") {
                     print("Found in Dock! Syncing preference.")
                     DispatchQueue.main.async {
                         self.showInDock = true

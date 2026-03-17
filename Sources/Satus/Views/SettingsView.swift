@@ -88,12 +88,6 @@ struct SettingsView: View {
                             Text(tag.name).tag(tag.id)
                         }
                     }
-                    
-                    if !appService.hiddenAppBundleIDs.isEmpty {
-                        Text("\(appService.hiddenAppBundleIDs.count) app(s) currently hidden from Open Apps")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
                 }
                 Section("Apps Switcher") {
                      // Shortcut 6: Apps Switcher
@@ -224,7 +218,7 @@ struct SettingsView: View {
             }
             .formStyle(.grouped)
             .padding()
-            .fileExporter(isPresented: $showExporter, document: exportDocument, contentType: .json, defaultFilename: "Satus_Config") { result in
+            .fileExporter(isPresented: $showExporter, document: exportDocument, contentType: .json, defaultFilename: "ZoneKey_Config") { result in
                 switch result {
                 case .success(let url):
                     print("Saved to \(url)")

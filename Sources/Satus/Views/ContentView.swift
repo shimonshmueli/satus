@@ -435,6 +435,7 @@ struct ContentView: View {
              
              window.identifier = NSUserInterfaceItemIdentifier("MainWindow")
              window.isReleasedWhenClosed = false
+             window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
              // window.isMovableByWindowBackground = true // REMOVED to fix drag conflict
              
              // Set delegate to handle window close events (quit app on close)
@@ -604,7 +605,7 @@ struct HiddenAppsDropZone: View {
                 Divider()
                     .padding(.vertical, 10)
                 
-                Text("Hidden Apps (when in Switcher mode)")
+                Text("Skipped Apps (when in Switcher mode)")
                     .font(.headline)
                     .foregroundColor(.secondary)
                     .padding(.horizontal, 35)
@@ -829,11 +830,11 @@ struct AppRowView: View {
                  if let onHide = onHide {
                      if AppService.isPro || appService.canHideApp {
                          Button(action: { onHide(app) }) {
-                             Label("Hide \(app.name)", systemImage: "eye.slash")
+                             Label("Skip \(app.name)", systemImage: "eye.slash")
                          }
                      } else {
                          Button(action: {}) {
-                             Label("Hide \(app.name)  ⌈PRO⌋", systemImage: "eye.slash")
+                             Label("Skip \(app.name)  ⌈PRO⌋", systemImage: "eye.slash")
                          }
                          .disabled(true)
                      }

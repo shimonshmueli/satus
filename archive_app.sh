@@ -6,6 +6,7 @@ APP_NAME="Satus"
 SIGNING_IDENTITY="Apple Development"
 TEAM_ID="7H7A38V8CV" # Default Team ID
 IS_RELEASE=false
+IS_PRO=false
 
 # Parse Arguments
 for arg in "$@"
@@ -16,6 +17,10 @@ do
         # Use Development cert hash for archiving; most reliable method
         SIGNING_IDENTITY="BEC010CFEDA389AB331DDF14AC6BDB510C79952A" 
         echo "🚀 Building for RELEASE (Using Development Cert Hash for Archive)"
+        ;;
+        --pro)
+        IS_PRO=true
+        echo "📣 Building PRO version (ZoneKey Pro)"
         ;;
     esac
 done
@@ -44,6 +49,12 @@ echo "🔐 Signing with: $SIGNING_IDENTITY"
 # Ensure Builds directory exists
 mkdir -p Builds
 
+# Build extra flags for Pro
+EXTRA_SWIFT_FLAGS=""
+if [ "$IS_PRO" = true ]; then
+    EXTRA_SWIFT_FLAGS="SWIFT_ACTIVE_COMPILATION_CONDITIONS=SATUS_PRO"
+fi
+
 # 1. Build the archive (this produces a binary in usr/local/bin because it's a CLI package)
 xcodebuild archive \
     -scheme "$APP_NAME" \
@@ -55,7 +66,8 @@ xcodebuild archive \
     DEVELOPMENT_TEAM="$TEAM_ID" \
     PROVISIONING_PROFILE_SPECIFIER="" \
     CODE_SIGN_ENTITLEMENTS="" \
-    CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO || {
+    CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO \
+    $EXTRA_SWIFT_FLAGS || {
         echo "❌ Archiving failed"
         echo "💡 If this failed due to signing, open the package in Xcode and ensure your Team is selected in Signing & Capabilities."
         exit 1
@@ -63,8 +75,16 @@ xcodebuild archive \
 
 echo "🛠️  Restructuring Archive into App Bundle..."
 
+# Set display name and executable name based on Pro/Free
+if [ "$IS_PRO" = true ]; then
+    DISPLAY_APP_NAME="ZoneKey Pro"
+else
+    DISPLAY_APP_NAME="ZoneKey"
+fi
+EXECUTABLE_NAME="ZoneKey"
+
 PRODUCTS_DIR="$ARCHIVE_PATH/Products"
-APP_BUNDLE="$PRODUCTS_DIR/Applications/$APP_NAME.app"
+APP_BUNDLE="$PRODUCTS_DIR/Applications/$DISPLAY_APP_NAME.app"
 BINARY_SOURCE="$PRODUCTS_DIR/usr/local/bin/$APP_NAME"
 
 # Check if binary exists where expected
@@ -77,11 +97,19 @@ fi
 mkdir -p "$APP_BUNDLE/Contents/MacOS"
 mkdir -p "$APP_BUNDLE/Contents/Resources"
 
-# Move Binary
-mv "$BINARY_SOURCE" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
+# Move Binary (rename from Satus to ZoneKey to match CFBundleExecutable)
+mv "$BINARY_SOURCE" "$APP_BUNDLE/Contents/MacOS/$EXECUTABLE_NAME"
 
 # Copy Info.plist
 cp "Sources/Satus/Info.plist" "$APP_BUNDLE/Contents/Info.plist"
+
+# Pro: override bundle ID and display name in the bundled Info.plist
+if [ "$IS_PRO" = true ]; then
+    plutil -replace CFBundleIdentifier -string "com.shimonshmueli.ZoneKeyPro" "$APP_BUNDLE/Contents/Info.plist"
+    plutil -replace CFBundleName -string "ZoneKey Pro" "$APP_BUNDLE/Contents/Info.plist"
+    plutil -replace CFBundleExecutable -string "ZoneKey" "$APP_BUNDLE/Contents/Info.plist"
+    echo "✅ Pro Bundle ID: com.shimonshmueli.ZoneKeyPro"
+fi
 
 # --- Icon Generation ---
 if [ -f "source_icon.png" ]; then
@@ -117,12 +145,13 @@ rm -rf "$PRODUCTS_DIR/usr"
 INFO_PLIST="Sources/Satus/Info.plist"
 VERSION_STRING=$(defaults read "$PWD/$INFO_PLIST" CFBundleShortVersionString)
 BUILD_NUMBER=$(defaults read "$PWD/$INFO_PLIST" CFBundleVersion)
-BUNDLE_ID=$(defaults read "$PWD/$INFO_PLIST" CFBundleIdentifier)
+# Read bundle ID from the bundled plist (may have been overridden for Pro)
+BUNDLE_ID=$(defaults read "$APP_BUNDLE/Contents/Info.plist" CFBundleIdentifier)
 
 plutil -insert ApplicationProperties -xml "
 <dict>
     <key>ApplicationPath</key>
-    <string>Applications/$APP_NAME.app</string>
+    <string>Applications/$DISPLAY_APP_NAME.app</string>
     <key>CFBundleIdentifier</key>
     <string>$BUNDLE_ID</string>
     <key>CFBundleShortVersionString</key>
@@ -134,6 +163,9 @@ plutil -insert ApplicationProperties -xml "
     <key>Team</key>
     <string>$TEAM_ID</string>
 </dict>" "$ARCHIVE_PATH/Info.plist"
+
+# Override the archive Name for Organizer display
+plutil -replace Name -string "$DISPLAY_APP_NAME" "$ARCHIVE_PATH/Info.plist"
 
 echo "✍️  Re-signing App Bundle with Entitlements..."
 codesign --force --sign "$SIGNING_IDENTITY" \

@@ -89,13 +89,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func setupMinimalMenu() {
         let mainMenu = NSMenu()
         
-        // App Menu (Satus)
+        // App Menu (ZoneKey)
         let appMenuItem = NSMenuItem()
-        let appMenu = NSMenu(title: "Satus") // Title often needed for the system to recognize it as App Menu
+        let appMenu = NSMenu(title: "ZoneKey") // Title often needed for the system to recognize it as App Menu
         
         // About
         let aboutItem = NSMenuItem(
-            title: "About Satus",
+            title: "About ZoneKey",
             action: #selector(showAbout),
             keyEquivalent: ""
         )
@@ -105,7 +105,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Quit
         let quitItem = NSMenuItem(
-            title: "Quit Satus",
+            title: "Quit ZoneKey",
             action: #selector(NSApplication.terminate(_:)),
             keyEquivalent: "q"
         )
@@ -139,7 +139,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let helpMenu = NSMenu(title: "Help")
         
         let satusHelpItem = NSMenuItem(
-            title: "Satus Help",
+            title: "ZoneKey Help",
             action: #selector(showHelp),
             keyEquivalent: "?"
         )
@@ -174,11 +174,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     @objc func showAbout() {
-        let isDebug = UserDefaults.standard.bool(forKey: "isDebugMode")
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
-        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
         
-        let displayVersion = isDebug ? "Version \(version) (Build \(build))" : "Version \(version)"
+        let displayVersion = "Version \(version)"
         
         let options: [NSApplication.AboutPanelOptionKey: Any] = [
              .applicationVersion: displayVersion,
@@ -197,10 +195,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let hostingController = NSHostingController(rootView: helpView)
             
             let window = NSWindow(contentViewController: hostingController)
-            window.title = "Satus Help"
+            window.title = "ZoneKey Help"
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
             window.center()
-            window.setFrameAutosaveName("SatusHelpWindow")
+            window.setFrameAutosaveName("ZoneKeyHelpWindow")
             window.isReleasedWhenClosed = false
             
             self.helpWindow = window
