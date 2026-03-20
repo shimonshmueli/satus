@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 import ServiceManagement
+import SwiftUI
 
 @MainActor
 class AppService: ObservableObject {
@@ -78,6 +79,15 @@ class AppService: ObservableObject {
     }
     @Published var lastKeywordFetchDate: Date? = nil {
         didSet { savePreferences() }
+    }
+    
+    // Accent Color
+    @Published var accentColorHex: String = "#34C759" {
+        didSet { savePreferences() }
+    }
+    
+    var accentColor: Color {
+        Color.fromHex(accentColorHex)
     }
 
     
@@ -679,7 +689,7 @@ class AppService: ObservableObject {
         
         let tagSettings = tags.map { AppTagDTO(id: $0.id, name: $0.name, colorHex: $0.colorHex, items: $0.items, usageCount: $0.usageCount) }
         
-        return UserPreferences(tags: tagSettings, appSettings: appSettings, iconScale: iconScale, appTheme: appTheme, viewMode: viewMode, shortcutMapping: shortcutTagMapping, showOpenApps: showOpenApps, showUtilities: showUtilities, showTagCount: showTagCount, hiddenAppBundleIDs: Array(hiddenAppBundleIDs), sortTagsAlphabetically: nil, tagSortMode: tagSortMode, isDebugMode: isDebugMode, defaultTagId: defaultTagId, appKeywords: appKeywords, lastKeywordFetchDate: lastKeywordFetchDate)
+        return UserPreferences(tags: tagSettings, appSettings: appSettings, iconScale: iconScale, appTheme: appTheme, viewMode: viewMode, shortcutMapping: shortcutTagMapping, showOpenApps: showOpenApps, showUtilities: showUtilities, showTagCount: showTagCount, hiddenAppBundleIDs: Array(hiddenAppBundleIDs), sortTagsAlphabetically: nil, tagSortMode: tagSortMode, isDebugMode: isDebugMode, defaultTagId: defaultTagId, appKeywords: appKeywords, lastKeywordFetchDate: lastKeywordFetchDate, accentColorHex: accentColorHex)
     }
 
     func restorePreferences(_ prefs: UserPreferences) {
@@ -700,6 +710,7 @@ class AppService: ObservableObject {
         if let defaultTag = prefs.defaultTagId { self.defaultTagId = defaultTag }
         if let keywords = prefs.appKeywords { self.appKeywords = keywords }
         if let fetchDate = prefs.lastKeywordFetchDate { self.lastKeywordFetchDate = fetchDate }
+        if let hex = prefs.accentColorHex { self.accentColorHex = hex }
 
         
         // Restore Tags
@@ -1001,6 +1012,7 @@ class AppService: ObservableObject {
         let defaultTagId: UUID?
         let appKeywords: [String: [String]]?
         let lastKeywordFetchDate: Date?
+        let accentColorHex: String?
     }
     
     struct ExportManifest: Codable {

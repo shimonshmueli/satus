@@ -49,7 +49,8 @@ struct SmartGridView: View {
     }
     
     var body: some View {
-        let itemWidth = baseSize + 40 // baseSize + padding
+        let cardWidth = baseSize + 44 // card internal (28) + frame extra (16)
+        let itemWidth = cardWidth + 20 // card + HStack spacing
         let columns = max(1, Int(availableWidth / itemWidth))
         let chunkedItems = items.chunked(into: columns)
         
@@ -80,11 +81,13 @@ struct SmartGridView: View {
                                 onLaunch(app)
                             }
                         }
+                        Spacer()
                     }
                 }
             }
-            .padding()
-            .padding()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.trailing)
+            .padding(.trailing)
             .onKeyPress(.return) {
                 // Check focused OR switcher target
                 let targetID = focusedAppID ?? appService.switcherTargetID
@@ -133,43 +136,74 @@ struct AppIconView: View {
     @State private var isHovering = false
     
     var body: some View {
-        VStack {
+        let currentSize = app.size == .large ? largeSize : size
+        let cardWidth = currentSize + 28
+        
+        VStack(spacing: 6) {
+            // Icon
             ZStack {
-                Image(nsImage: IconCache.shared.icon(for: app, size: app.size == .large ? largeSize : size))
+                Image(nsImage: IconCache.shared.icon(for: app, size: currentSize))
                     .resizable()
-                    .frame(width: app.size == .large ? largeSize : size, height: app.size == .large ? largeSize : size)
-                    .cornerRadius(app.size == .large ? largeSize * 0.18 : size * 0.22)
+                    .frame(width: currentSize, height: currentSize)
+                    .cornerRadius(currentSize * 0.22)
                     .shadow(radius: isHovering ? 8 : 2)
                     .scaleEffect(isHovering || isFocused ? 1.05 : 1.0)
                     .animation(.spring(response: 0.3), value: isHovering)
                     .animation(.spring(response: 0.3), value: isFocused)
                 
                 if isFocused {
-                    RoundedRectangle(cornerRadius: app.size == .large ? largeSize * 0.22 : size * 0.26)
-                        .stroke(Color.accentColor, lineWidth: 3)
-                        .frame(width: (app.size == .large ? largeSize : size) + 6, height: (app.size == .large ? largeSize : size) + 6)
+                    RoundedRectangle(cornerRadius: currentSize * 0.26)
+                        .stroke(appService.accentColor, lineWidth: 3)
+                        .frame(width: currentSize + 6, height: currentSize + 6)
                 }
             }
-            .contentShape(Rectangle())
-            .onHover { hover in 
-                isHovering = hover 
-                onHoverApp(hover ? app : nil)
-            }
-
+            
+            // Name
             Text(app.name)
                 .font(.caption)
                 .fontWeight(isFocused ? .semibold : .regular)
                 .lineLimit(1)
                 .truncationMode(.tail)
-                .foregroundColor(isFocused ? .accentColor : .primary)
-                .frame(width: size + 20)
+                .foregroundColor(isFocused ? appService.accentColor : .primary)
+                .frame(width: cardWidth - 12)
+            
+            // Tag dots
+            let matchedTags = availableTags.filter { app.tags.contains($0.id) }
+            if !matchedTags.isEmpty {
+                HStack(spacing: 4) {
+                    ForEach(matchedTags) { tag in
+                        Circle()
+                            .fill(Color.fromHex(tag.colorHex ?? "#888888"))
+                            .frame(width: 6, height: 6)
+                    }
+                }
+            } else {
+                // Invisible spacer to keep card heights consistent
+                Color.clear.frame(height: 6)
+            }
         }
-        .frame(width: app.size == .large ? largeSize + 20 : size + 20, height: app.size == .large ? largeSize + 20 : size + 30)
+        .padding(.horizontal, 8)
+        .padding(.top, 10)
+        .padding(.bottom, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(isHovering ? Color.primary.opacity(0.06) : Color.primary.opacity(0.03))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(isFocused ? appService.accentColor.opacity(0.5) : Color.primary.opacity(0.08), lineWidth: 1)
+        )
+        .frame(width: cardWidth + 16)
+        .contentShape(Rectangle())
+        .onHover { hover in
+            isHovering = hover
+            onHoverApp(hover ? app : nil)
+        }
         .contentShape(Rectangle())
         .contextMenu {
             if let onRestore = onRestore {
                 Button(action: { onRestore(app) }) {
-                    Label("Restore to Open Apps", systemImage: "arrow.uturn.backward")
+                    Label("Restore to Open Applications", systemImage: "arrow.uturn.backward")
                 }
             } else {
                 if let onQuit = onQuit {

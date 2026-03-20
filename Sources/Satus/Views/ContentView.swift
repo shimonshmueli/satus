@@ -29,7 +29,7 @@ struct ContentView: View {
     
     @State private var searchFocusedState: Bool = false
     @FocusState private var isSidebarFocused: Bool
-    @State private var headerVerticalOffset: CGFloat = -22
+    @State private var headerVerticalOffset: CGFloat = -12
     @State private var showListViewSwitcherAlert: Bool = false
     
 
@@ -80,7 +80,7 @@ struct ContentView: View {
                         Image(systemName: "magnifyingglass")
                             .foregroundColor(.secondary)
                             .frame(height: 28)
-                        NonTabTextField(placeholder: "Search All Apps...", text: $appService.searchText, isFocused: $searchFocusedState)
+                        NonTabTextField(placeholder: "Search All Applications...", text: $appService.searchText, isFocused: $searchFocusedState)
                             .frame(height: 28)
                             // .focused($isSearchFocused) // Not needed as focus is controlled by focusing other elements
                             .onAppear {
@@ -131,7 +131,7 @@ struct ContentView: View {
                         
                         Button(action: { appService.isPinned.toggle() }) {
                             Image(systemName: appService.isPinned ? "pin.fill" : "pin")
-                                .foregroundColor(appService.isPinned ? .accentColor : .secondary)
+                                .foregroundColor(appService.isPinned ? appService.accentColor : .secondary)
                                 .font(.title2)
                                 .frame(height: 28)
                         }
@@ -161,13 +161,14 @@ struct ContentView: View {
                     
                     GeometryReader { geometry in
                         ScrollView {
+                          VStack(spacing: 0) {
                             if appService.sidebarSelection == nil || appService.sidebarSelection == .allApps {
                                 // Header if needed?
                             } else if appService.sidebarSelection == .openApps {
                             } else if appService.sidebarSelection == .utilities {
                         } else if appService.sidebarSelection == .untagged {
                            HStack {
-                                Text("Untagged Apps")
+                                Text("Untagged Applications")
                                     .font(.headline)
                                     .foregroundColor(.secondary)
                                 Spacer()
@@ -329,10 +330,13 @@ struct ContentView: View {
                                 }
                             }
                         }
-                        .padding()
-                        .offset(y: -12)
-                        .frame(minHeight: geometry.size.height, alignment: .top)
-                        .frame(minWidth: 200) // Prevent width collapse
+                        .padding(.leading, 20)
+                        .padding(.trailing)
+                        .padding(.top, 3)
+                        .padding(.bottom)
+                        .frame(minHeight: geometry.size.height, alignment: .topLeading)
+                        .frame(width: geometry.size.width, alignment: .topLeading)
+                          } // end VStack(spacing: 0)
                         }
                         .onChange(of: geometry.size.width) { _, newValue in
                             if newValue > 100 {
@@ -590,6 +594,7 @@ struct ContentView: View {
         appService.triggeredByShortcut = false 
     }
     .preferredColorScheme(appService.appTheme == "dark" ? .dark : (appService.appTheme == "light" ? .light : nil))
+    .tint(appService.accentColor)
 }
 
 struct HiddenAppsDropZone: View {
@@ -605,7 +610,7 @@ struct HiddenAppsDropZone: View {
                 Divider()
                     .padding(.vertical, 10)
                 
-                Text("Skipped Apps (when in Switcher mode)")
+                Text("Skipped Applications (when in Switcher mode)")
                     .font(.headline)
                     .foregroundColor(.secondary)
                     .padding(.horizontal, 35)
@@ -787,7 +792,7 @@ struct AppRowView: View {
         .padding(.vertical, 8)
         .padding(.horizontal, 12)
         .background(
-            isFocused ? Color.accentColor : (hoveredAppId == app.id ? Color.secondary.opacity(0.1) : Color.clear)
+            isFocused ? appService.accentColor : (hoveredAppId == app.id ? Color.secondary.opacity(0.1) : Color.clear)
         )
         .cornerRadius(8)
         .contentShape(Rectangle())
@@ -801,7 +806,7 @@ struct AppRowView: View {
         .contextMenu {
              if let onRestore = onRestore {
                  Button(action: { onRestore(app) }) {
-                     Label("Restore to Open Apps", systemImage: "arrow.uturn.backward")
+                     Label("Restore to Open Applications", systemImage: "arrow.uturn.backward")
                  }
              } else {
                  if let onQuit = onQuit {
@@ -911,54 +916,44 @@ struct SidebarView: View {
     
     @EnvironmentObject var appService: AppService
     
-    // Proxy to hide system selection when grid is focused (prevents ghosting)
-    var visualSelection: Binding<SidebarSelection?> {
-        Binding(
-            get: {
-                if appService.activeFocusZone == .grid {
-                    return nil
-                }
-                return selection
-            },
-            set: { newValue in
-                selection = newValue
-                if newValue != nil {
-                     appService.activeFocusZone = .sidebar
-                }
-            }
-        )
+    private func selectItem(_ item: SidebarSelection) {
+        selection = item
+        appService.activeFocusZone = .sidebar
     }
     
     var body: some View {
-        List(selection: visualSelection) {
+        List {
             
             Section {
-                Label("All Apps", systemImage: "square.grid.2x2")
-                    .tag(SidebarSelection.allApps)
-                    .listRowBackground((selection == .allApps && !isSidebarFocused) ? 
+                Label("All Applications", systemImage: "square.grid.2x2")
+                    .listRowBackground(selection == .allApps ?
                         RoundedRectangle(cornerRadius: 6)
-                            .fill(Color.primary.opacity(0.15))
+                            .fill(Color.gray.opacity(isSidebarFocused ? 0.4 : 0.2))
                             .padding(.horizontal, 6)
                         : nil)
+                    .contentShape(Rectangle())
+                    .onTapGesture { selectItem(.allApps) }
                 
                 if appService.showOpenApps {
-                    Label("Open Apps", systemImage: "macwindow")
-                        .tag(SidebarSelection.openApps)
-                        .listRowBackground((selection == .openApps && !isSidebarFocused) ? 
+                    Label("Open Applications", systemImage: "macwindow")
+                        .listRowBackground(selection == .openApps ?
                             RoundedRectangle(cornerRadius: 6)
-                                .fill(Color.primary.opacity(0.15))
+                                .fill(Color.gray.opacity(isSidebarFocused ? 0.4 : 0.2))
                                 .padding(.horizontal, 6)
                             : nil)
+                        .contentShape(Rectangle())
+                        .onTapGesture { selectItem(.openApps) }
                 }
                 
                 if appService.showUtilities {
                     Label("Utilities", systemImage: "wrench.and.screwdriver")
-                        .tag(SidebarSelection.utilities)
-                        .listRowBackground((selection == .utilities && !isSidebarFocused) ? 
+                        .listRowBackground(selection == .utilities ?
                             RoundedRectangle(cornerRadius: 6)
-                                .fill(Color.primary.opacity(0.15))
+                                .fill(Color.gray.opacity(isSidebarFocused ? 0.4 : 0.2))
                                 .padding(.horizontal, 6)
                             : nil)
+                        .contentShape(Rectangle())
+                        .onTapGesture { selectItem(.utilities) }
                 }
             }
             
@@ -966,33 +961,36 @@ struct SidebarView: View {
                 if appService.tagSortMode == .manual {
                     ForEach(appService.displayTags) { tag in
                         TagRow(tag: tag, editingTagId: $editingTagId, focusedField: $focusedField)
-                            .tag(SidebarSelection.tag(tag.id))
-                            .listRowBackground((selection == .tag(tag.id) && !isSidebarFocused) ? 
+                            .listRowBackground(selection == .tag(tag.id) ?
                                 RoundedRectangle(cornerRadius: 6)
-                                    .fill(Color.primary.opacity(0.15))
+                                    .fill(Color.gray.opacity(isSidebarFocused ? 0.4 : 0.2))
                                     .padding(.horizontal, 6)
                                 : nil)
+                            .contentShape(Rectangle())
+                            .onTapGesture { selectItem(.tag(tag.id)) }
                     }
                     .onMove(perform: appService.moveTag)
                 } else {
                     ForEach(appService.displayTags) { tag in
                         TagRow(tag: tag, editingTagId: $editingTagId, focusedField: $focusedField)
-                            .tag(SidebarSelection.tag(tag.id))
-                            .listRowBackground((selection == .tag(tag.id) && !isSidebarFocused) ? 
+                            .listRowBackground(selection == .tag(tag.id) ?
                                 RoundedRectangle(cornerRadius: 6)
-                                    .fill(Color.primary.opacity(0.15))
+                                    .fill(Color.gray.opacity(isSidebarFocused ? 0.4 : 0.2))
                                     .padding(.horizontal, 6)
                                 : nil)
+                            .contentShape(Rectangle())
+                            .onTapGesture { selectItem(.tag(tag.id)) }
                     }
                 }
                 
                 Label("Untagged", systemImage: "tag.slash")
-                    .tag(SidebarSelection.untagged)
-                    .listRowBackground((selection == .untagged && !isSidebarFocused) ? 
+                    .listRowBackground(selection == .untagged ?
                         RoundedRectangle(cornerRadius: 6)
-                            .fill(Color.primary.opacity(0.15))
+                            .fill(Color.gray.opacity(isSidebarFocused ? 0.4 : 0.2))
                             .padding(.horizontal, 6)
                         : nil)
+                    .contentShape(Rectangle())
+                    .onTapGesture { selectItem(.untagged) }
                 
                 Button(action: {
                     guard let newTag = appService.addTag(name: "New Tag") else { return }
@@ -1018,7 +1016,20 @@ struct SidebarView: View {
                 .disabled(!appService.canAddTag)
             }
         }
+        .tint(.gray)
         .focused($isSidebarFocused)
+        .safeAreaInset(edge: .top) {
+            VStack(spacing: 0) {
+                Text(AppService.isPro ? "ZoneKey Pro" : "ZoneKey")
+                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .foregroundColor(.gray)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 12)
+                    .padding(.bottom, 8)
+                Divider()
+            }
+        }
         .safeAreaInset(edge: .bottom) {
             if let shortcut = appService.appSwitcherShortcutFormatted {
                 VStack(spacing: 0) {
@@ -1104,11 +1115,11 @@ struct TagRow: View {
         .padding(.horizontal, 8)
         .background(
             RoundedRectangle(cornerRadius: 6)
-                .fill(isTargeted ? Color.accentColor.opacity(0.15) : Color.clear)
+                .fill(isTargeted ? appService.accentColor.opacity(0.15) : Color.clear)
         )
         .overlay(
              RoundedRectangle(cornerRadius: 6)
-                 .stroke(isTargeted ? Color.accentColor : Color.clear, lineWidth: 1)
+                 .stroke(isTargeted ? appService.accentColor : Color.clear, lineWidth: 1)
         )
         .tag(SidebarSelection.tag(tag.id))
         .contextMenu {

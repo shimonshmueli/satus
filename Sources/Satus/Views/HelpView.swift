@@ -11,28 +11,28 @@ struct HelpView: View {
                 
                 Group {
                     SectionHeader(title: "Overview")
-                    Text("ZoneKey is an app launcher and switcher designed for speed and efficiency.")
+                    Text("ZoneKey is an application launcher and switcher designed for speed and efficiency.")
                         .font(.body)
                         .foregroundColor(.secondary)
                     
                     SectionHeader(title: "Navigation")
-                    HelpRow(icon: "arrow.up.and.down.and.arrow.left.and.right", title: "Arrow Keys", description: "Navigate between apps and the sidebar.")
-                    HelpRow(icon: "return", title: "Enter", description: "Launch the selected app.")
+                    HelpRow(icon: "arrow.up.and.down.and.arrow.left.and.right", title: "Arrow Keys", description: "Navigate between applications and the sidebar.")
+                    HelpRow(icon: "return", title: "Enter", description: "Launch the selected application.")
                     HelpRow(icon: "escape", title: "Escape", description: "Hide ZoneKey.")
                     
                     SectionHeader(title: "Search")
-                    HelpRow(icon: "magnifyingglass", title: "Type to Search", description: "Just start typing to filter your apps instantly.")
+                    HelpRow(icon: "magnifyingglass", title: "Type to Search", description: "Just start typing to filter your applications instantly.")
                     
                     SectionHeader(title: "Drag & Drop")
-                    HelpRow(icon: "arrow.down.doc", title: "Add to Dock", description: "Drag an app icon to the Dock to keep it there.")
-                    HelpRow(icon: "tag", title: "Assign Tags", description: "Drag an app to a tag in the sidebar to assign it.")
+                    HelpRow(icon: "arrow.down.doc", title: "Add to Dock", description: "Drag an application icon to the Dock to keep it there.")
+                    HelpRow(icon: "tag", title: "Assign Tags", description: "Drag an application to a tag in the sidebar to assign it.")
                     
                     SectionHeader(title: "Organization")
-                    HelpRow(icon: "tag", title: "Tags", description: "Right-click an app to assign tags. Filter by tags using the sidebar.")
+                    HelpRow(icon: "tag", title: "Tags", description: "Right-click an application to assign tags. Filter by tags using the sidebar.")
                     HelpRow(icon: "plus.circle", title: "Add Tag", description: "Create new tags via the sidebar 'Add New Tag...' button.")
                     
-                    SectionHeader(title: "App Switcher")
-                    HelpRow(icon: "macwindow", title: "Open Apps", description: "View and switch between currently running applications.")
+                    SectionHeader(title: "Application Switcher")
+                    HelpRow(icon: "macwindow", title: "Open Applications", description: "View and switch between currently running applications.")
                 }
             }
             .padding(32)
@@ -62,7 +62,7 @@ struct HelpRow: View {
             Image(systemName: icon)
                 .font(.title3)
                 .frame(width: 24)
-                .foregroundColor(.accentColor)
+                .foregroundColor(.blue)
             
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)

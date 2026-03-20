@@ -49,6 +49,10 @@ struct SettingsView: View {
                     CustomThemePicker(selection: $appService.appTheme) { clickedTheme in
                         handleThemeClick(clickedTheme)
                     }
+                    
+                    Divider()
+                    
+                    AccentColorPicker(selectedHex: $appService.accentColorHex)
                 }
                 
 
@@ -57,9 +61,9 @@ struct SettingsView: View {
                     Toggle("Launch at Login", isOn: $appService.launchAtLogin)
                     
                     Divider()
-                    Toggle("Show Open Apps", isOn: $appService.showOpenApps)
+                    Toggle("Show Open Applications", isOn: $appService.showOpenApps)
                     Toggle("Show Utilities", isOn: $appService.showUtilities)
-                    Toggle("Show Tag App Count", isOn: $appService.showTagCount)
+                    Toggle("Show Tag Application Count", isOn: $appService.showTagCount)
                     Picker("Sort Tags", selection: $appService.tagSortMode) {
                         Text("Manual").tag(TagSortMode.manual)
                         Text("Alphabetical").tag(TagSortMode.alphabetical)
@@ -82,16 +86,16 @@ struct SettingsView: View {
                         get: { appService.defaultTagId ?? UUID(uuidString: "00000000-0000-0000-0000-000000000000")! },
                         set: { appService.defaultTagId = ($0 == UUID(uuidString: "00000000-0000-0000-0000-000000000000")!) ? nil : $0 }
                     )) {
-                        Text("All Apps").tag(UUID(uuidString: "00000000-0000-0000-0000-000000000000")!)
+                        Text("All Applications").tag(UUID(uuidString: "00000000-0000-0000-0000-000000000000")!)
                         Divider()
                         ForEach(appService.tags) { tag in
                             Text(tag.name).tag(tag.id)
                         }
                     }
                 }
-                Section("Apps Switcher") {
+                Section("Application Switcher") {
                      // Shortcut 6: Apps Switcher
-                     ShortcutRow(id: 6, label: "Apps Switcher", appService: appService)
+                     ShortcutRow(id: 6, label: "Application Switcher", appService: appService)
                         .padding(.leading, 15)
                      
                      if appService.viewMode != .grid {
@@ -107,11 +111,11 @@ struct SettingsView: View {
 
                 Section("Navigation Shortcuts") {
                     // Shortcut 1: All Apps
-                    ShortcutRow(id: 1, label: "All Apps", appService: appService)
+                    ShortcutRow(id: 1, label: "All Applications", appService: appService)
                         .padding(.leading, 15)
                     
                     // Shortcut 2: Open Apps
-                    ShortcutRow(id: 2, label: "Open Apps", appService: appService)
+                    ShortcutRow(id: 2, label: "Open Applications", appService: appService)
                         .padding(.leading, 15)
                     
                     // Shortcut 3: Utilities
@@ -178,7 +182,7 @@ struct SettingsView: View {
                                     isPrefetching = false
                                 }
                             }) {
-                                Text("Prefetch App Keywords")
+                                Text("Prefetch Application Keywords")
                             }
                             .disabled(isPrefetching)
                             
@@ -195,7 +199,7 @@ struct SettingsView: View {
                                 .foregroundColor(.secondary)
                         }
                         
-                        Text("Keywords are automatically refreshed daily when the app is hidden.")
+                        Text("Keywords are automatically refreshed daily when the application is hidden.")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
@@ -258,6 +262,7 @@ struct SettingsView: View {
         }
         .padding()
         .frame(width: 500, height: 750)
+        .tint(appService.accentColor)
         .onAppear {
             takeSnapshot()
         }
@@ -302,6 +307,7 @@ struct SettingsView: View {
 }
 
 struct CustomThemePicker: View {
+    @EnvironmentObject var appService: AppService
     @Binding var selection: String
     var onClick: (String) -> Void
     
@@ -334,7 +340,7 @@ struct CustomThemePicker: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .background(selection == value ? Color.accentColor : Color.clear)
+        .background(selection == value ? appService.accentColor : Color.clear)
     }
 }
 
@@ -394,7 +400,7 @@ struct ShortcutRow: View {
             
             if isRecording {
                 Text("Press keys...")
-                    .foregroundColor(.accentColor)
+                    .foregroundColor(appService.accentColor)
                     .background(KeyReader { key, mods in
                          GlobalHotkey.shared.setShortcut(id: id, keyCode: Int(key), modifiers: Int(mods.rawValue))
                          load()
@@ -526,7 +532,7 @@ struct CustomTagShortcutRow: View {
             
             if isRecording {
                 Text("Press keys...")
-                    .foregroundColor(.accentColor)
+                    .foregroundColor(appService.accentColor)
                     .background(KeyReader { key, mods in
                          GlobalHotkey.shared.setShortcut(id: id, keyCode: Int(key), modifiers: Int(mods.rawValue))
                          load()
@@ -602,5 +608,61 @@ private let itemFormatter: DateFormatter = {
     formatter.timeStyle = .short
     return formatter
 }()
-
+struct AccentColorPicker: View {
+    @Binding var selectedHex: String
+    @State private var customColor: Color = .green
+    
+    private let presets: [(name: String, hex: String)] = [
+        ("Green", "#34C759"),
+        ("Blue", "#007AFF"),
+        ("Purple", "#AF52DE"),
+        ("Orange", "#FF9500"),
+        ("Pink", "#FF2D55"),
+        ("Teal", "#5AC8FA"),
+    ]
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Accent Color")
+                .font(.system(size: 13))
+            
+            HStack(spacing: 10) {
+                ForEach(presets, id: \.hex) { preset in
+                    Button(action: {
+                        selectedHex = preset.hex
+                    }) {
+                        ZStack {
+                            Circle()
+                                .fill(Color.fromHex(preset.hex))
+                                .frame(width: 24, height: 24)
+                                .shadow(color: Color.fromHex(preset.hex).opacity(0.4), radius: 2, y: 1)
+                            
+                            if selectedHex.uppercased() == preset.hex.uppercased() {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundColor(.white)
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .help(preset.name)
+                }
+                
+                Divider()
+                    .frame(height: 20)
+                
+                ColorPicker("", selection: $customColor, supportsOpacity: false)
+                    .labelsHidden()
+                    .frame(width: 24, height: 24)
+                    .help("Custom Color")
+                    .onChange(of: customColor) { _, newColor in
+                        selectedHex = newColor.toHex()
+                    }
+                    .onAppear {
+                        customColor = Color.fromHex(selectedHex)
+                    }
+            }
+        }
+    }
+}
 

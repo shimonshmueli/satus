@@ -1,6 +1,15 @@
 import SwiftUI
+import AppKit
 
 extension Color {
+    func toHex() -> String {
+        guard let cgColor = NSColor(self).usingColorSpace(.sRGB) else { return "#34C759" }
+        let r = Int(cgColor.redComponent * 255)
+        let g = Int(cgColor.greenComponent * 255)
+        let b = Int(cgColor.blueComponent * 255)
+        return String(format: "#%02X%02X%02X", r, g, b)
+    }
+    
     static func fromHex(_ hexString: String) -> Color {
         let hex = hexString.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
         var int: UInt64 = 0
