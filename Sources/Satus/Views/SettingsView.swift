@@ -255,11 +255,17 @@ struct SettingsView: View {
                             .textFieldStyle(.roundedBorder)
                     }
 
-                    // Action button — wired up in a later step.
-                    Button("Suggest tags for my apps…") {
-                        llmStatus = "Classification not yet implemented."
+                    // Action button. For now this is a smoke test: classify one app
+                    // and show the result inline. Full review-sheet flow comes later.
+                    HStack {
+                        Button("Suggest tags for my apps…") {
+                            runClassificationSmokeTest()
+                        }
+                        .disabled(!hasStoredKey || isClassifying)
+                        if isClassifying {
+                            ProgressView().controlSize(.small)
+                        }
                     }
-                    .disabled(!hasStoredKey)
 
                     if let status = llmStatus {
                         Text(status)
@@ -360,6 +366,7 @@ struct SettingsView: View {
     @State private var apiKeyInput: String = ""
     @State private var hasStoredKey: Bool = false
     @State private var llmStatus: String? = nil
+    @State private var isClassifying: Bool = false
 
     private var llmProvider: KeychainStore.Provider {
         KeychainStore.Provider(rawValue: llmProviderRaw) ?? .anthropic
@@ -367,6 +374,65 @@ struct SettingsView: View {
 
     private func refreshKeyStatus() {
         hasStoredKey = KeychainStore.hasKey(for: llmProvider)
+    }
+
+    /// Step-2 smoke test: send one app through the chosen provider and show
+    /// either the model's first assignment or the error. No state mutation.
+    private func runClassificationSmokeTest() {
+        #if SATUS_PRO
+        guard let sample = appService.apps.first else {
+            llmStatus = "No installed apps found to test with."
+            return
+        }
+        // OpenRouter not implemented yet in step 2.
+        guard llmProvider == .anthropic else {
+            llmStatus = "Selected provider not yet implemented."
+            return
+        }
+
+        let tagDescriptors = appService.tags.map {
+            TagDescriptor(id: $0.id.uuidString, name: $0.name)
+        }
+        let appDescriptor = AppDescriptor(
+            bundleID: sample.id,
+            name: sample.name,
+            category: sample.category
+        )
+
+        isClassifying = true
+        llmStatus = "Contacting \(llmProvider.displayName)…"
+
+        Task { @MainActor in
+            defer { isClassifying = false }
+            do {
+                let client = AnthropicClient()
+                let assignments = try await client.classify(
+                    tags: tagDescriptors,
+                    apps: [appDescriptor]
+                )
+                if let first = assignments.first {
+                    let existingNames = first.existingTagIDs
+                        .compactMap { id in tagDescriptors.first { $0.id == id }?.name }
+                        .joined(separator: ", ")
+                    let newNames = first.newTagNames.joined(separator: ", ")
+                    let summary = [
+                        "Tested with \(sample.name).",
+                        existingNames.isEmpty ? nil : "Existing: \(existingNames).",
+                        newNames.isEmpty ? nil : "New: \(newNames).",
+                        "Confidence \(String(format: "%.2f", first.confidence)).",
+                        first.rationale.isEmpty ? nil : first.rationale
+                    ].compactMap { $0 }.joined(separator: " ")
+                    llmStatus = "Round-trip OK. " + summary
+                } else {
+                    llmStatus = "Round-trip OK but model returned no assignments."
+                }
+            } catch {
+                llmStatus = "Failed: \(error.localizedDescription)"
+            }
+        }
+        #else
+        llmStatus = "Tag suggestions require ZoneKey Pro."
+        #endif
     }
 
     // Debug Mode Sequence: System, System, Dark, Dark, Light, Light

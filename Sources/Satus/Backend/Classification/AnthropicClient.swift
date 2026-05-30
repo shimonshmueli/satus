@@ -1,0 +1,164 @@
+// © Shimon Shmueli
+#if SATUS_PRO
+import Foundation
+
+/// Anthropic Messages API implementation of `LLMClient`.
+/// Reads the API key from Keychain on each call so a user can swap keys
+/// without restarting the app.
+struct AnthropicClient: LLMClient {
+
+    static let defaultModel = "claude-haiku-4-5-20251001"
+
+    private let model: String
+    private let session: URLSession
+
+    init(model: String = AnthropicClient.defaultModel,
+         session: URLSession = .shared) {
+        self.model = model
+        self.session = session
+    }
+
+    func classify(tags: [TagDescriptor],
+                  apps: [AppDescriptor]) async throws -> [Assignment] {
+        guard let key = KeychainStore.load(for: .anthropic) else {
+            throw LLMError.missingAPIKey
+        }
+
+        let payload = ClassifyInput(existingTags: tags, apps: apps)
+        let payloadJSON: String
+        do {
+            let data = try JSONEncoder().encode(payload)
+            payloadJSON = String(data: data, encoding: .utf8) ?? "{}"
+        } catch {
+            throw LLMError.decoding("Failed to encode request: \(error.localizedDescription)")
+        }
+
+        let body = MessagesRequest(
+            model: model,
+            max_tokens: 2048,
+            system: Self.systemPrompt,
+            messages: [.init(role: "user", content: payloadJSON)]
+        )
+
+        var req = URLRequest(url: URL(string: "https://api.anthropic.com/v1/messages")!)
+        req.httpMethod = "POST"
+        req.setValue(key,          forHTTPHeaderField: "x-api-key")
+        req.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        req.setValue("application/json", forHTTPHeaderField: "content-type")
+        req.httpBody = try JSONEncoder().encode(body)
+
+        let (data, response): (Data, URLResponse)
+        do {
+            (data, response) = try await session.data(for: req)
+        } catch {
+            throw LLMError.transport(error)
+        }
+
+        guard let http = response as? HTTPURLResponse else {
+            throw LLMError.invalidResponse("Not an HTTP response")
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            let body = String(data: data, encoding: .utf8) ?? ""
+            throw LLMError.http(status: http.statusCode, body: body)
+        }
+
+        // Anthropic returns: { content: [ { type: "text", text: "<json>" }, ... ], ... }
+        let decoded: MessagesResponse
+        do {
+            decoded = try JSONDecoder().decode(MessagesResponse.self, from: data)
+        } catch {
+            throw LLMError.decoding("Top-level response: \(error.localizedDescription)")
+        }
+        guard let text = decoded.content.first(where: { $0.type == "text" })?.text else {
+            throw LLMError.invalidResponse("No text block in response")
+        }
+
+        // The model is instructed to return strict JSON matching `ClassifyOutput`.
+        // Strip code fences if it slipped any in despite instructions.
+        let cleaned = Self.stripCodeFences(text)
+
+        let result: ClassifyOutput
+        do {
+            result = try JSONDecoder().decode(ClassifyOutput.self,
+                                              from: Data(cleaned.utf8))
+        } catch {
+            throw LLMError.decoding("Inner JSON: \(error.localizedDescription)\nRaw: \(text.prefix(400))")
+        }
+
+        return result.assignments
+    }
+
+    // MARK: - Prompt
+
+    // Kept intentionally short — the model's task is well-defined by the schema
+    // and the user payload. Anything fancier belongs in v2 once we measure quality.
+    private static let systemPrompt = """
+    You classify macOS apps into the user's existing tags. The user will send a JSON \
+    object with two fields: "existingTags" (an array of {id, name}) and "apps" (an \
+    array of {bundleID, name, category}).
+
+    For each app, decide which existing tags it belongs in. You may also propose \
+    new tag names when no existing tag fits, but only when truly needed; prefer \
+    reusing existing tags.
+
+    Reply with STRICT JSON only, no prose, no code fences, matching this schema:
+
+    {
+      "assignments": [
+        {
+          "bundleID": "string",
+          "existingTagIDs": ["string", ...],
+          "newTagNames": ["string", ...],
+          "rationale": "one short sentence",
+          "confidence": 0.0
+        }
+      ]
+    }
+
+    Rules:
+    - confidence is a number between 0 and 1.
+    - Use existing tag IDs verbatim from the input.
+    - Keep new tag names short (1-2 words), Title Case, no emoji.
+    - If you have no opinion for an app, return it with empty arrays and low confidence.
+    """
+
+    private static func stripCodeFences(_ s: String) -> String {
+        var t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        if t.hasPrefix("```") {
+            if let nl = t.firstIndex(of: "\n") { t = String(t[t.index(after: nl)...]) }
+            if t.hasSuffix("```") { t = String(t.dropLast(3)) }
+        }
+        return t.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+// MARK: - Wire types
+
+private struct ClassifyInput: Codable {
+    let existingTags: [TagDescriptor]
+    let apps: [AppDescriptor]
+}
+
+private struct ClassifyOutput: Codable {
+    let assignments: [Assignment]
+}
+
+private struct MessagesRequest: Codable {
+    let model: String
+    let max_tokens: Int
+    let system: String
+    let messages: [Message]
+    struct Message: Codable {
+        let role: String
+        let content: String
+    }
+}
+
+private struct MessagesResponse: Codable {
+    let content: [Block]
+    struct Block: Codable {
+        let type: String
+        let text: String?
+    }
+}
+#endif
