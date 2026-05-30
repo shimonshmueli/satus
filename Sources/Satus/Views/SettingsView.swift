@@ -268,9 +268,22 @@ struct SettingsView: View {
                     }
 
                     if let status = llmStatus {
-                        Text(status)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                        HStack(alignment: .top, spacing: 8) {
+                            Text(status)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            Button {
+                                let pb = NSPasteboard.general
+                                pb.clearContents()
+                                pb.setString(status, forType: .string)
+                            } label: {
+                                Image(systemName: "doc.on.doc")
+                            }
+                            .buttonStyle(.borderless)
+                            .help("Copy status to clipboard")
+                        }
                     }
                 } header: {
                     HStack(spacing: 6) {
@@ -376,56 +389,54 @@ struct SettingsView: View {
         hasStoredKey = KeychainStore.hasKey(for: llmProvider)
     }
 
-    /// Step-2 smoke test: send one app through the chosen provider and show
-    /// either the model's first assignment or the error. No state mutation.
+    /// Classify all currently-untagged apps via the chosen provider, validate
+    /// the reply, persist to the cache, and surface a summary inline.
+    /// State mutation on AppService is deferred to the review-sheet milestone.
     private func runClassificationSmokeTest() {
         #if SATUS_PRO
-        guard let sample = appService.apps.first else {
-            llmStatus = "No installed apps found to test with."
+        let untagged = appService.apps.filter { $0.tags.isEmpty }
+        guard !untagged.isEmpty else {
+            llmStatus = "All installed apps are already tagged. Nothing to classify."
             return
         }
-        let tagDescriptors = appService.tags.map {
-            TagDescriptor(id: $0.id.uuidString, name: $0.name)
-        }
-        let appDescriptor = AppDescriptor(
-            bundleID: sample.id,
-            name: sample.name,
-            category: sample.category
-        )
 
         isClassifying = true
-        llmStatus = "Contacting \(llmProvider.displayName)…"
+        llmStatus = "Classifying \(untagged.count) untagged app\(untagged.count == 1 ? "" : "s")…"
+
+        // Snapshot the inputs so the background Task is independent of view state.
+        let appsSnapshot = untagged
+        let tagsSnapshot = appService.tags
+        let provider = llmProvider
+        let modelOverride = openRouterModel
 
         Task { @MainActor in
             defer { isClassifying = false }
             do {
                 let client: LLMClient
-                switch llmProvider {
-                case .anthropic:
-                    client = AnthropicClient()
-                case .openrouter:
-                    client = OpenRouterClient(model: openRouterModel)
+                switch provider {
+                case .anthropic:  client = AnthropicClient()
+                case .openrouter: client = OpenRouterClient(model: modelOverride)
                 }
-                let assignments = try await client.classify(
-                    tags: tagDescriptors,
-                    apps: [appDescriptor]
-                )
-                if let first = assignments.first {
-                    let existingNames = first.existingTagIDs
-                        .compactMap { id in tagDescriptors.first { $0.id == id }?.name }
-                        .joined(separator: ", ")
-                    let newNames = first.newTagNames.joined(separator: ", ")
-                    let summary = [
-                        "Tested with \(sample.name).",
-                        existingNames.isEmpty ? nil : "Existing: \(existingNames).",
-                        newNames.isEmpty ? nil : "New: \(newNames).",
-                        "Confidence \(String(format: "%.2f", first.confidence)).",
-                        first.rationale.isEmpty ? nil : first.rationale
-                    ].compactMap { $0 }.joined(separator: " ")
-                    llmStatus = "Round-trip OK. " + summary
-                } else {
-                    llmStatus = "Round-trip OK but model returned no assignments."
+                let run = try await Classifier(client: client)
+                    .suggest(for: appsSnapshot, existingTags: tagsSnapshot)
+
+                let totalNewTagNames = run.assignments
+                    .reduce(0) { $0 + $1.newTagNames.count }
+                let totalExistingAssignments = run.assignments
+                    .reduce(0) { $0 + $1.existingTagIDs.count }
+
+                var parts: [String] = []
+                parts.append("Done. \(run.assignments.count) app assignment\(run.assignments.count == 1 ? "" : "s")")
+                parts.append("(\(run.cacheHits) cached, \(run.newRequests) fetched).")
+                parts.append("\(totalExistingAssignments) tag link\(totalExistingAssignments == 1 ? "" : "s"), \(totalNewTagNames) new tag name\(totalNewTagNames == 1 ? "" : "s") proposed.")
+                if run.unknownTagIDsDropped > 0 {
+                    parts.append("Dropped \(run.unknownTagIDsDropped) unknown tag ID\(run.unknownTagIDsDropped == 1 ? "" : "s").")
                 }
+                if run.newTagNamesDroppedOrNormalized > 0 {
+                    parts.append("Cleaned \(run.newTagNamesDroppedOrNormalized) new-tag name\(run.newTagNamesDroppedOrNormalized == 1 ? "" : "s").")
+                }
+                parts.append("Review sheet coming next.")
+                llmStatus = parts.joined(separator: " ")
             } catch {
                 llmStatus = "Failed: \(error.localizedDescription)"
             }

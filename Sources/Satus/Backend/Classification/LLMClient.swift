@@ -56,4 +56,27 @@ protocol LLMClient {
     func classify(tags: [TagDescriptor],
                   apps: [AppDescriptor]) async throws -> [Assignment]
 }
+
+// MARK: - Shared diagnostic
+
+/// Builds the "Inner JSON failed to decode" message both providers throw.
+/// Shows head + tail of the raw text and flags likely truncation so the user
+/// can tell at a glance whether the model ran out of tokens.
+func diagnosticMessage(error: Error, cleaned: String, raw: String) -> String {
+    let endsCleanly = cleaned.trimmingCharacters(in: .whitespacesAndNewlines).hasSuffix("}")
+    let truncationHint = endsCleanly
+        ? "Output appears complete."
+        : "Looks truncated (no closing brace) — try raising max_tokens or splitting into smaller batches."
+    let headLimit = 800
+    let tailLimit = 300
+    let head = String(raw.prefix(headLimit))
+    let tail = raw.count > headLimit + tailLimit
+        ? "\n…\n" + String(raw.suffix(tailLimit))
+        : ""
+    return """
+    Inner JSON: \(error.localizedDescription)
+    \(truncationHint)
+    Raw head: \(head)\(tail)
+    """
+}
 #endif

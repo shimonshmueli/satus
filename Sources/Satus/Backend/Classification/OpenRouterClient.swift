@@ -45,7 +45,10 @@ struct OpenRouterClient: LLMClient {
             ],
             // OpenAI-style JSON-mode hint. Most popular models on OpenRouter honor it;
             // models that don't will still get the system-prompt instruction.
-            response_format: .init(type: "json_object")
+            response_format: .init(type: "json_object"),
+            // Generous cap — without this many models default to 1024 tokens
+            // and silently truncate multi-app JSON output mid-string.
+            max_tokens: 8192
         )
 
         var req = URLRequest(url: URL(string: "https://openrouter.ai/api/v1/chat/completions")!)
@@ -88,7 +91,7 @@ struct OpenRouterClient: LLMClient {
             result = try JSONDecoder().decode(ClassifyOutput.self,
                                               from: Data(cleaned.utf8))
         } catch {
-            throw LLMError.decoding("Inner JSON: \(error.localizedDescription)\nRaw: \(text.prefix(400))")
+            throw LLMError.decoding(diagnosticMessage(error: error, cleaned: cleaned, raw: text))
         }
         return result.assignments
     }
@@ -152,6 +155,7 @@ private struct ChatRequest: Codable {
     let model: String
     let messages: [Message]
     let response_format: ResponseFormat?
+    let max_tokens: Int?
     struct Message: Codable {
         let role: String
         let content: String

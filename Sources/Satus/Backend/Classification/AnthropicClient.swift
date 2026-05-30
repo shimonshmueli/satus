@@ -35,7 +35,7 @@ struct AnthropicClient: LLMClient {
 
         let body = MessagesRequest(
             model: model,
-            max_tokens: 2048,
+            max_tokens: 8192,
             system: Self.systemPrompt,
             messages: [.init(role: "user", content: payloadJSON)]
         )
@@ -82,7 +82,7 @@ struct AnthropicClient: LLMClient {
             result = try JSONDecoder().decode(ClassifyOutput.self,
                                               from: Data(cleaned.utf8))
         } catch {
-            throw LLMError.decoding("Inner JSON: \(error.localizedDescription)\nRaw: \(text.prefix(400))")
+            throw LLMError.decoding(diagnosticMessage(error: error, cleaned: cleaned, raw: text))
         }
 
         return result.assignments
