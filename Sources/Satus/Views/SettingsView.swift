@@ -210,6 +210,86 @@ struct SettingsView: View {
                     }
                 }
                 
+                Section {
+                    // Provider picker
+                    Picker("Provider", selection: $llmProviderRaw) {
+                        ForEach(KeychainStore.Provider.allCases) { p in
+                            Text(p.displayName).tag(p.rawValue)
+                        }
+                    }
+
+                    // API key field + Save / Clear
+                    HStack {
+                        SecureField("API Key", text: $apiKeyInput)
+                            .textFieldStyle(.roundedBorder)
+                        Button("Save") {
+                            if KeychainStore.save(apiKeyInput, for: llmProvider) {
+                                apiKeyInput = ""
+                                refreshKeyStatus()
+                                llmStatus = "Key saved."
+                            } else {
+                                llmStatus = "Failed to save key."
+                            }
+                        }
+                        .disabled(apiKeyInput.trimmingCharacters(in: .whitespaces).isEmpty)
+                        Button("Clear") {
+                            KeychainStore.delete(for: llmProvider)
+                            apiKeyInput = ""
+                            refreshKeyStatus()
+                            llmStatus = "Key cleared."
+                        }
+                        .disabled(!hasStoredKey)
+                    }
+
+                    // Key presence indicator
+                    Text(hasStoredKey
+                         ? "A key is stored for \(llmProvider.displayName)."
+                         : "No key stored for \(llmProvider.displayName).")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    // Model override (OpenRouter only — Anthropic uses its default model)
+                    if llmProvider == .openrouter {
+                        TextField("Model (e.g. anthropic/claude-haiku-4-5)",
+                                  text: $openRouterModel)
+                            .textFieldStyle(.roundedBorder)
+                    }
+
+                    // Action button — wired up in a later step.
+                    Button("Suggest tags for my apps…") {
+                        llmStatus = "Classification not yet implemented."
+                    }
+                    .disabled(!hasStoredKey)
+
+                    if let status = llmStatus {
+                        Text(status)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                } header: {
+                    HStack(spacing: 6) {
+                        Text("Tag Suggestions")
+                        Text("PRO")
+                            .font(.caption2)
+                            .fontWeight(.bold)
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(Color.orange))
+                    }
+                } footer: {
+                    Text("Bring your own API key. Keys are stored in the macOS Keychain and only sent to the selected provider when you press the button.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .disabled(!AppService.isPro)
+                .onAppear { refreshKeyStatus() }
+                .onChange(of: llmProviderRaw) {
+                    apiKeyInput = ""
+                    llmStatus = nil
+                    refreshKeyStatus()
+                }
+
                 Section("About") {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "Unknown")")
@@ -272,7 +352,23 @@ struct SettingsView: View {
     @State private var exportDocument: JSONDocument?
     @State private var importStatus: String?
     @State private var isPrefetching = false
-    
+
+    // LLM tag-suggestions (Pro). Provider selection + model override persist
+    // across launches; the API key itself lives in the Keychain (KeychainStore).
+    @AppStorage("llmProvider")      private var llmProviderRaw: String = KeychainStore.Provider.anthropic.rawValue
+    @AppStorage("llmOpenRouterModel") private var openRouterModel: String = "anthropic/claude-haiku-4-5"
+    @State private var apiKeyInput: String = ""
+    @State private var hasStoredKey: Bool = false
+    @State private var llmStatus: String? = nil
+
+    private var llmProvider: KeychainStore.Provider {
+        KeychainStore.Provider(rawValue: llmProviderRaw) ?? .anthropic
+    }
+
+    private func refreshKeyStatus() {
+        hasStoredKey = KeychainStore.hasKey(for: llmProvider)
+    }
+
     // Debug Mode Sequence: System, System, Dark, Dark, Light, Light
     @State private var themeUnlockQueue: [String] = []
     
