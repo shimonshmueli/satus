@@ -384,12 +384,6 @@ struct SettingsView: View {
             llmStatus = "No installed apps found to test with."
             return
         }
-        // OpenRouter not implemented yet in step 2.
-        guard llmProvider == .anthropic else {
-            llmStatus = "Selected provider not yet implemented."
-            return
-        }
-
         let tagDescriptors = appService.tags.map {
             TagDescriptor(id: $0.id.uuidString, name: $0.name)
         }
@@ -405,7 +399,13 @@ struct SettingsView: View {
         Task { @MainActor in
             defer { isClassifying = false }
             do {
-                let client = AnthropicClient()
+                let client: LLMClient
+                switch llmProvider {
+                case .anthropic:
+                    client = AnthropicClient()
+                case .openrouter:
+                    client = OpenRouterClient(model: openRouterModel)
+                }
                 let assignments = try await client.classify(
                     tags: tagDescriptors,
                     apps: [appDescriptor]
