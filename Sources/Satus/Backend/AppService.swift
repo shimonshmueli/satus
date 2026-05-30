@@ -82,7 +82,7 @@ class AppService: ObservableObject {
     }
     
     // Accent Color
-    @Published var accentColorHex: String = "#34C759" {
+    @Published var accentColorHex: String = "#FF9500" {
         didSet { savePreferences() }
     }
     
@@ -639,6 +639,10 @@ class AppService: ObservableObject {
     
     func moveTag(from source: IndexSet, to destination: Int) {
         tags.move(fromOffsets: source, toOffset: destination)
+        savePreferences()
+    }
+    
+    func savePreferencesNow() {
         savePreferences()
     }
     

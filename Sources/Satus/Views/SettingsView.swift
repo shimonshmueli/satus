@@ -59,8 +59,6 @@ struct SettingsView: View {
                 
                 Section("General") {
                     Toggle("Launch at Login", isOn: $appService.launchAtLogin)
-                    
-                    Divider()
                     Toggle("Show Open Applications", isOn: $appService.showOpenApps)
                     Toggle("Show Utilities", isOn: $appService.showUtilities)
                     Toggle("Show Tag Application Count", isOn: $appService.showTagCount)
@@ -125,6 +123,7 @@ struct SettingsView: View {
                     // Shortcut 4-9: Custom Tags (Skipping 6 as it is App Switcher)
                     ForEach([4, 5, 7, 8, 9], id: \.self) { id in
                         CustomTagShortcutRow(id: id, appService: appService)
+                            .padding(.leading, 15)
                     }
                 }
                 
@@ -515,18 +514,46 @@ struct CustomTagShortcutRow: View {
         return nil
     }
     
+    var selectedTagName: String {
+        if let tagID = appService.shortcutTagMapping[id],
+           let tag = appService.tags.first(where: { $0.id == tagID }) {
+            return tag.name
+        }
+        return ""
+    }
+    
     var body: some View {
         HStack {
-            Picker("", selection: Binding(
-                get: { appService.shortcutTagMapping[id] ?? UUID() },
-                set: { appService.shortcutTagMapping[id] = $0 }
-            )) {
-                Text("None").tag(UUID())
-                ForEach(appService.tags) { tag in
-                    Text(tag.name).tag(tag.id)
+            Menu {
+                Button("None") {
+                    appService.shortcutTagMapping[id] = nil
                 }
+                Divider()
+                ForEach(appService.tags) { tag in
+                    Button(tag.name) {
+                        appService.shortcutTagMapping[id] = tag.id
+                    }
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Text(selectedTagName)
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                    Spacer()
+                }
+                .frame(width: 150)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color(nsColor: .controlBackgroundColor))
+                .cornerRadius(5)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 5)
+                        .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
+                )
             }
-            .labelsHidden()
+            .menuStyle(.borderlessButton)
+            .tint(.primary)
+            .fixedSize()
             
             Spacer()
             
@@ -619,6 +646,8 @@ struct AccentColorPicker: View {
         ("Orange", "#FF9500"),
         ("Pink", "#FF2D55"),
         ("Teal", "#5AC8FA"),
+        ("Red", "#FF3B30"),
+        ("Yellow", "#FFCC00"),
     ]
     
     var body: some View {

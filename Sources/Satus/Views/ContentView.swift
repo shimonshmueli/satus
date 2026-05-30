@@ -614,6 +614,7 @@ struct HiddenAppsDropZone: View {
                     .font(.headline)
                     .foregroundColor(.secondary)
                     .padding(.horizontal, 35)
+                    .padding(.bottom, 15)
                 
                 if viewMode == .grid {
                     SmartGridView(
@@ -908,6 +909,43 @@ struct AppRowView: View {
 }
 
 
+// Disables the default system selection highlight on the backing NSTableView/NSOutlineView
+struct ListSelectionClearer: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async {
+            self.disableSelectionHighlight(from: view)
+        }
+        return view
+    }
+    
+    func updateNSView(_ nsView: NSView, context: Context) {
+        DispatchQueue.main.async {
+            self.disableSelectionHighlight(from: nsView)
+        }
+    }
+    
+    private func disableSelectionHighlight(from view: NSView) {
+        guard let window = view.window else { return }
+        disableHighlightRecursive(in: window.contentView)
+    }
+    
+    private func disableHighlightRecursive(in view: NSView?) {
+        guard let view = view else { return }
+        if let outlineView = view as? NSOutlineView {
+            outlineView.selectionHighlightStyle = .none
+            return
+        }
+        if let tableView = view as? NSTableView {
+            tableView.selectionHighlightStyle = .none
+            return
+        }
+        for subview in view.subviews {
+            disableHighlightRecursive(in: subview)
+        }
+    }
+}
+
 struct SidebarView: View {
     @Binding var selection: SidebarSelection?
     @Binding var editingTagId: UUID?
@@ -916,81 +954,58 @@ struct SidebarView: View {
     
     @EnvironmentObject var appService: AppService
     
-    private func selectItem(_ item: SidebarSelection) {
-        selection = item
-        appService.activeFocusZone = .sidebar
-    }
-    
     var body: some View {
-        List {
+        List(selection: $selection) {
             
             Section {
                 Label("All Applications", systemImage: "square.grid.2x2")
+                    .tag(SidebarSelection.allApps)
                     .listRowBackground(selection == .allApps ?
                         RoundedRectangle(cornerRadius: 6)
                             .fill(Color.gray.opacity(isSidebarFocused ? 0.4 : 0.2))
                             .padding(.horizontal, 6)
                         : nil)
-                    .contentShape(Rectangle())
-                    .onTapGesture { selectItem(.allApps) }
                 
                 if appService.showOpenApps {
                     Label("Open Applications", systemImage: "macwindow")
+                        .tag(SidebarSelection.openApps)
                         .listRowBackground(selection == .openApps ?
                             RoundedRectangle(cornerRadius: 6)
                                 .fill(Color.gray.opacity(isSidebarFocused ? 0.4 : 0.2))
                                 .padding(.horizontal, 6)
                             : nil)
-                        .contentShape(Rectangle())
-                        .onTapGesture { selectItem(.openApps) }
                 }
                 
                 if appService.showUtilities {
                     Label("Utilities", systemImage: "wrench.and.screwdriver")
+                        .tag(SidebarSelection.utilities)
                         .listRowBackground(selection == .utilities ?
                             RoundedRectangle(cornerRadius: 6)
                                 .fill(Color.gray.opacity(isSidebarFocused ? 0.4 : 0.2))
                                 .padding(.horizontal, 6)
                             : nil)
-                        .contentShape(Rectangle())
-                        .onTapGesture { selectItem(.utilities) }
                 }
             }
             
             Section("TAGS") {
-                if appService.tagSortMode == .manual {
-                    ForEach(appService.displayTags) { tag in
-                        TagRow(tag: tag, editingTagId: $editingTagId, focusedField: $focusedField)
-                            .listRowBackground(selection == .tag(tag.id) ?
-                                RoundedRectangle(cornerRadius: 6)
-                                    .fill(Color.gray.opacity(isSidebarFocused ? 0.4 : 0.2))
-                                    .padding(.horizontal, 6)
-                                : nil)
-                            .contentShape(Rectangle())
-                            .onTapGesture { selectItem(.tag(tag.id)) }
-                    }
-                    .onMove(perform: appService.moveTag)
-                } else {
-                    ForEach(appService.displayTags) { tag in
-                        TagRow(tag: tag, editingTagId: $editingTagId, focusedField: $focusedField)
-                            .listRowBackground(selection == .tag(tag.id) ?
-                                RoundedRectangle(cornerRadius: 6)
-                                    .fill(Color.gray.opacity(isSidebarFocused ? 0.4 : 0.2))
-                                    .padding(.horizontal, 6)
-                                : nil)
-                            .contentShape(Rectangle())
-                            .onTapGesture { selectItem(.tag(tag.id)) }
-                    }
+                ForEach(appService.displayTags) { tag in
+                    TagRow(tag: tag, editingTagId: $editingTagId, focusedField: $focusedField)
+                        .tag(SidebarSelection.tag(tag.id))
+                        .listRowBackground(selection == .tag(tag.id) ?
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(Color.gray.opacity(isSidebarFocused ? 0.4 : 0.2))
+                                .padding(.horizontal, 6)
+                            : nil)
                 }
+                .onMove(perform: appService.moveTag)
                 
                 Label("Untagged", systemImage: "tag.slash")
+                    .tag(SidebarSelection.untagged)
                     .listRowBackground(selection == .untagged ?
                         RoundedRectangle(cornerRadius: 6)
                             .fill(Color.gray.opacity(isSidebarFocused ? 0.4 : 0.2))
                             .padding(.horizontal, 6)
                         : nil)
-                    .contentShape(Rectangle())
-                    .onTapGesture { selectItem(.untagged) }
                 
                 Button(action: {
                     guard let newTag = appService.addTag(name: "New Tag") else { return }
@@ -1018,6 +1033,10 @@ struct SidebarView: View {
         }
         .tint(.gray)
         .focused($isSidebarFocused)
+        .background(ListSelectionClearer())
+        .onChange(of: selection) { _, _ in
+            appService.activeFocusZone = .sidebar
+        }
         .safeAreaInset(edge: .top) {
             VStack(spacing: 0) {
                 Text(AppService.isPro ? "ZoneKey Pro" : "ZoneKey")
@@ -1035,8 +1054,8 @@ struct SidebarView: View {
                 VStack(spacing: 0) {
                     Divider()
                     Text("Switcher Mode: \(shortcut)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                        .font(.system(size: 12))
+                        .foregroundColor(appService.accentColor)
                         .padding(.vertical, 8)
                         .frame(maxWidth: .infinity)
                 }
@@ -1121,7 +1140,6 @@ struct TagRow: View {
              RoundedRectangle(cornerRadius: 6)
                  .stroke(isTargeted ? appService.accentColor : Color.clear, lineWidth: 1)
         )
-        .tag(SidebarSelection.tag(tag.id))
         .contextMenu {
             Button("Rename") {
                 editingTagId = tag.id
@@ -1159,6 +1177,28 @@ struct TagRow: View {
                     Label("No Color", systemImage: "circle.dashed")
                 }
                 .disabled(tag.colorHex == nil)
+            }
+            
+            if appService.tagSortMode == .manual {
+                Divider()
+                
+                Button("Move Up") {
+                    if let idx = appService.tags.firstIndex(where: { $0.id == tag.id }), idx > 0 {
+                        appService.tags.move(fromOffsets: IndexSet(integer: idx), toOffset: idx - 1)
+                        appService.savePreferencesNow()
+                    }
+                }
+                .disabled(appService.tags.first?.id == tag.id)
+                
+                Button("Move Down") {
+                    if let idx = appService.tags.firstIndex(where: { $0.id == tag.id }), idx < appService.tags.count - 1 {
+                        appService.tags.move(fromOffsets: IndexSet(integer: idx), toOffset: idx + 2)
+                        appService.savePreferencesNow()
+                    }
+                }
+                .disabled(appService.tags.last?.id == tag.id)
+                
+                Divider()
             }
             
             Button("Remove Tag", role: .destructive) {
