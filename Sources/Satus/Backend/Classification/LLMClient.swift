@@ -4,10 +4,13 @@ import Foundation
 
 // MARK: - Wire DTOs
 
-/// One of the user's existing tags, as the model sees it.
+/// One of the user's existing tags, as the model sees it. `description` is
+/// non-nil only for tags whose name still matches a default-seed name — that
+/// way renamed seeds drop their description (their meaning may have shifted).
 struct TagDescriptor: Codable, Hashable {
     let id: String   // UUID string
     let name: String
+    let description: String?
 }
 
 /// One app to classify.
@@ -17,12 +20,12 @@ struct AppDescriptor: Codable, Hashable {
     let category: String?  // LSApplicationCategoryType, e.g. "public.app-category.developer-tools"
 }
 
-/// The model's proposed assignment for a single app.
-/// Nothing here is applied until the user approves it in the review sheet.
+/// The model's proposed assignment for a single app. Existing-tags-only:
+/// the prompt forbids the model from inventing new tag names. Nothing here
+/// is applied until the user approves it in the review sheet.
 struct Assignment: Codable, Hashable {
     let bundleID: String
     let existingTagIDs: [String]
-    let newTagNames: [String]
     let rationale: String
     let confidence: Double
 }

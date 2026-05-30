@@ -255,11 +255,14 @@ struct SettingsView: View {
                             .textFieldStyle(.roundedBorder)
                     }
 
-                    // Action button. For now this is a smoke test: classify one app
-                    // and show the result inline. Full review-sheet flow comes later.
+                    // Two-stage flow: stage 1 = Tag Setup sheet (rename / recolor /
+                    // delete / add); stage 2 = Classifier + Review sheet, kicked off
+                    // automatically when the user presses Continue in stage 1.
                     HStack {
                         Button("Suggest tags for my apps…") {
-                            runClassificationSmokeTest()
+                            #if SATUS_PRO
+                            showTagSetupSheet = true
+                            #endif
                         }
                         .disabled(!hasStoredKey || isClassifying)
                         if isClassifying {
@@ -308,6 +311,20 @@ struct SettingsView: View {
                     llmStatus = nil
                     refreshKeyStatus()
                 }
+                #if SATUS_PRO
+                .sheet(isPresented: $showTagSetupSheet) {
+                    TagSetupSheet(onContinue: {
+                        // Setup sheet has dismissed. Kick off classification next tick
+                        // so the dismissal animation completes before we show review.
+                        DispatchQueue.main.async { runClassification() }
+                    })
+                    .environmentObject(appService)
+                }
+                .sheet(isPresented: $showReviewSheet) {
+                    ReviewSuggestionsSheet(assignments: pendingReviewAssignments)
+                        .environmentObject(appService)
+                }
+                #endif
 
                 Section("About") {
                     VStack(alignment: .leading, spacing: 4) {
@@ -380,6 +397,11 @@ struct SettingsView: View {
     @State private var hasStoredKey: Bool = false
     @State private var llmStatus: String? = nil
     @State private var isClassifying: Bool = false
+    #if SATUS_PRO
+    @State private var pendingReviewAssignments: [ValidatedAssignment] = []
+    @State private var showReviewSheet: Bool = false
+    @State private var showTagSetupSheet: Bool = false
+    #endif
 
     private var llmProvider: KeychainStore.Provider {
         KeychainStore.Provider(rawValue: llmProviderRaw) ?? .anthropic
@@ -390,9 +412,8 @@ struct SettingsView: View {
     }
 
     /// Classify all currently-untagged apps via the chosen provider, validate
-    /// the reply, persist to the cache, and surface a summary inline.
-    /// State mutation on AppService is deferred to the review-sheet milestone.
-    private func runClassificationSmokeTest() {
+    /// the reply, persist to the cache, and open the review sheet on success.
+    private func runClassification() {
         #if SATUS_PRO
         let untagged = appService.apps.filter { $0.tags.isEmpty }
         guard !untagged.isEmpty else {
@@ -420,23 +441,18 @@ struct SettingsView: View {
                 let run = try await Classifier(client: client)
                     .suggest(for: appsSnapshot, existingTags: tagsSnapshot)
 
-                let totalNewTagNames = run.assignments
-                    .reduce(0) { $0 + $1.newTagNames.count }
-                let totalExistingAssignments = run.assignments
-                    .reduce(0) { $0 + $1.existingTagIDs.count }
-
-                var parts: [String] = []
-                parts.append("Done. \(run.assignments.count) app assignment\(run.assignments.count == 1 ? "" : "s")")
-                parts.append("(\(run.cacheHits) cached, \(run.newRequests) fetched).")
-                parts.append("\(totalExistingAssignments) tag link\(totalExistingAssignments == 1 ? "" : "s"), \(totalNewTagNames) new tag name\(totalNewTagNames == 1 ? "" : "s") proposed.")
-                if run.unknownTagIDsDropped > 0 {
-                    parts.append("Dropped \(run.unknownTagIDsDropped) unknown tag ID\(run.unknownTagIDsDropped == 1 ? "" : "s").")
+                // Hand off to the review sheet. Inline status is just a one-liner
+                // summary; the sheet is where the user makes decisions.
+                let usefulCount = run.assignments
+                    .filter { !$0.existingTagIDs.isEmpty }
+                    .count
+                if usefulCount == 0 {
+                    llmStatus = "Done. \(run.assignments.count) app(s) classified; no tag suggestions to review."
+                } else {
+                    llmStatus = "Classified \(run.assignments.count) app(s) (\(run.cacheHits) cached, \(run.newRequests) fetched). Opening review sheet…"
+                    pendingReviewAssignments = run.assignments
+                    showReviewSheet = true
                 }
-                if run.newTagNamesDroppedOrNormalized > 0 {
-                    parts.append("Cleaned \(run.newTagNamesDroppedOrNormalized) new-tag name\(run.newTagNamesDroppedOrNormalized == 1 ? "" : "s").")
-                }
-                parts.append("Review sheet coming next.")
-                llmStatus = parts.joined(separator: " ")
             } catch {
                 llmStatus = "Failed: \(error.localizedDescription)"
             }

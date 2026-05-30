@@ -454,11 +454,11 @@ class AppService: ObservableObject {
         self.apps = discoveredApps.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
         
         if self.tags.isEmpty {
-            self.tags = [
-                AppTag(name: "Productivity"),
-                AppTag(name: "Media"),
-                AppTag(name: "Tools")
-            ]
+            // Seven seed tags applied to both Free and Pro on first launch.
+            // Each carries a color so users see a coherent palette out of the box.
+            self.tags = DefaultTags.all.map {
+                AppTag(name: $0.name, colorHex: $0.colorHex)
+            }
         }
         
         let currentSwitcher = GlobalHotkey.shared.getShortcut(id: 6)

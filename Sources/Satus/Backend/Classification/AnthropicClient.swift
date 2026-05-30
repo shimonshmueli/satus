@@ -94,12 +94,12 @@ struct AnthropicClient: LLMClient {
     // and the user payload. Anything fancier belongs in v2 once we measure quality.
     private static let systemPrompt = """
     You classify macOS apps into the user's existing tags. The user will send a JSON \
-    object with two fields: "existingTags" (an array of {id, name}) and "apps" (an \
-    array of {bundleID, name, category}).
+    object with two fields: "existingTags" (an array of {id, name, description?}) \
+    and "apps" (an array of {bundleID, name, category}).
 
-    For each app, decide which existing tags it belongs in. You may also propose \
-    new tag names when no existing tag fits, but only when truly needed; prefer \
-    reusing existing tags.
+    Pick from the existing tags only. NEVER invent new tag names. An app may belong \
+    to multiple tags. Use the description (when present) to understand what each \
+    tag covers.
 
     Reply with STRICT JSON only, no prose, no code fences, matching this schema:
 
@@ -108,7 +108,6 @@ struct AnthropicClient: LLMClient {
         {
           "bundleID": "string",
           "existingTagIDs": ["string", ...],
-          "newTagNames": ["string", ...],
           "rationale": "one short sentence",
           "confidence": 0.0
         }
@@ -118,8 +117,7 @@ struct AnthropicClient: LLMClient {
     Rules:
     - confidence is a number between 0 and 1.
     - Use existing tag IDs verbatim from the input.
-    - Keep new tag names short (1-2 words), Title Case, no emoji.
-    - If you have no opinion for an app, return it with empty arrays and low confidence.
+    - If no tag fits, return an empty existingTagIDs array and low confidence.
     """
 
     private static func stripCodeFences(_ s: String) -> String {

@@ -6,23 +6,21 @@ import CryptoKit
 // MARK: - Validated output
 
 /// What the rest of the app gets to see after validation: only real existing-tag
-/// UUIDs survive, new-tag names are normalized, confidence is clamped to [0,1].
+/// UUIDs survive, confidence is clamped to [0,1]. The model never proposes new
+/// tag names in the two-stage flow, so there is no `newTagNames` field.
 struct ValidatedAssignment: Codable, Hashable {
     let bundleID: String
     let existingTagIDs: [UUID]
-    let newTagNames: [String]
     let rationale: String
     let confidence: Double
 }
 
-/// Summary of a single classifier run. Surfaced inline today; the review sheet
-/// will consume `assignments` in the next milestone.
+/// Summary of a single classifier run.
 struct SuggestionRun {
     let assignments: [ValidatedAssignment]
     let cacheHits: Int
     let newRequests: Int
     let unknownTagIDsDropped: Int
-    let newTagNamesDroppedOrNormalized: Int
 }
 
 // MARK: - Classifier
@@ -32,10 +30,6 @@ struct SuggestionRun {
 struct Classifier {
 
     let client: LLMClient
-
-    /// Maximum length for any new tag name. Long names are usually a sign the
-    /// model went off-script; clip them rather than reject so the rest stays useful.
-    static let maxNewTagNameLength = 30
 
     /// Apps per LLM request. Small enough that the JSON reply fits well under
     /// the 8192-token output cap even when every assignment has a rationale.
@@ -62,11 +56,16 @@ struct Classifier {
 
         var validatedNew: [ValidatedAssignment] = []
         var droppedIDs = 0
-        var droppedNames = 0
 
         if !toFetch.isEmpty {
+            // Attach the seed description for any tag whose name still matches a
+            // default seed. Renamed seeds drop the description on purpose.
             let tagDescriptors = existingTags.map {
-                TagDescriptor(id: $0.id.uuidString, name: $0.name)
+                TagDescriptor(
+                    id: $0.id.uuidString,
+                    name: $0.name,
+                    description: DefaultTags.description(forName: $0.name)
+                )
             }
             // Index inputs once so we can look up versions per assignment.
             let appByID = Dictionary(uniqueKeysWithValues: toFetch.map { ($0.id, $0) })
@@ -80,9 +79,8 @@ struct Classifier {
                 let raw = try await client.classify(tags: tagDescriptors, apps: appDescriptors)
 
                 for assignment in raw {
-                    let (v, di, dn) = Self.validate(assignment, existingTags: existingTags)
-                    droppedIDs   += di
-                    droppedNames += dn
+                    let (v, di) = Self.validate(assignment, existingTags: existingTags)
+                    droppedIDs += di
                     validatedNew.append(v)
 
                     // Cache only if we recognize the bundleID; an unknown bundleID
@@ -101,21 +99,19 @@ struct Classifier {
             assignments: cached + validatedNew,
             cacheHits: cached.count,
             newRequests: toFetch.count,
-            unknownTagIDsDropped: droppedIDs,
-            newTagNamesDroppedOrNormalized: droppedNames
+            unknownTagIDsDropped: droppedIDs
         )
     }
 
     // MARK: - Validation
 
-    /// Returns the validated assignment plus counts of (dropped existing IDs,
-    /// dropped-or-normalized new tag names) for reporting.
+    /// Returns the validated assignment plus the count of dropped existing IDs
+    /// (model hallucinated a UUID not in the user's tag set).
     private static func validate(_ a: Assignment,
                                  existingTags: [AppTag])
-    -> (ValidatedAssignment, droppedIDs: Int, droppedNames: Int) {
+    -> (ValidatedAssignment, droppedIDs: Int) {
 
         let validIDs = Set(existingTags.map { $0.id })
-        let existingNamesLower = Set(existingTags.map { $0.name.lowercased() })
 
         var droppedIDs = 0
         let cleanedIDs: [UUID] = a.existingTagIDs.compactMap { raw in
@@ -126,50 +122,17 @@ struct Classifier {
             return uuid
         }
 
-        var droppedNames = 0
-        var seenLower = Set<String>()
-        let cleanedNames: [String] = a.newTagNames.compactMap { raw in
-            let normalized = normalizeTagName(raw)
-            guard !normalized.isEmpty else {
-                droppedNames += 1
-                return nil
-            }
-            let lower = normalized.lowercased()
-            // Reject names that already exist or that the model proposed twice.
-            if existingNamesLower.contains(lower) || seenLower.contains(lower) {
-                droppedNames += 1
-                return nil
-            }
-            seenLower.insert(lower)
-            if normalized != raw { droppedNames += 1 }  // counted as "normalized"
-            return normalized
-        }
-
         let confidence = max(0.0, min(1.0, a.confidence))
 
         return (
             ValidatedAssignment(
                 bundleID: a.bundleID,
                 existingTagIDs: cleanedIDs,
-                newTagNames: cleanedNames,
                 rationale: a.rationale,
                 confidence: confidence
             ),
-            droppedIDs,
-            droppedNames
+            droppedIDs
         )
-    }
-
-    /// Allow letters, numbers, and ASCII spaces; collapse whitespace; clip length.
-    /// Conservative on purpose — anything weirder we can relax later with evidence.
-    private static func normalizeTagName(_ raw: String) -> String {
-        let allowed = CharacterSet.alphanumerics.union(.whitespaces)
-        let filtered = String(raw.unicodeScalars.filter { allowed.contains($0) })
-        let collapsed = filtered
-            .split(whereSeparator: \.isWhitespace)
-            .joined(separator: " ")
-        let trimmed = collapsed.trimmingCharacters(in: .whitespacesAndNewlines)
-        return String(trimmed.prefix(maxNewTagNameLength))
     }
 
     // MARK: - Hash / key helpers
