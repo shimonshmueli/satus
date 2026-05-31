@@ -218,41 +218,36 @@ struct SettingsView: View {
                         }
                     }
 
-                    // API key field + Save / Clear
+                    // API key field + Save / Clear.
+                    // Keychain is probed only at action time (Save, Clear, or
+                    // Suggest tags…). Opening Settings does not touch Keychain.
                     HStack {
                         SecureField("API Key", text: $apiKeyInput)
                             .textFieldStyle(.roundedBorder)
                         Button("Save") {
                             if KeychainStore.save(apiKeyInput, for: llmProvider) {
                                 apiKeyInput = ""
-                                refreshKeyStatus()
-                                llmStatus = "Key saved."
+                                llmStatus = "Key saved for \(llmProvider.displayName)."
                             } else {
                                 llmStatus = "Failed to save key."
                             }
                         }
                         .disabled(apiKeyInput.trimmingCharacters(in: .whitespaces).isEmpty)
                         Button("Clear") {
+                            // Idempotent — delete-when-absent is harmless.
                             KeychainStore.delete(for: llmProvider)
                             apiKeyInput = ""
-                            refreshKeyStatus()
-                            llmStatus = "Key cleared."
+                            llmStatus = "Key cleared for \(llmProvider.displayName)."
                         }
-                        .disabled(!hasStoredKey)
                     }
-
-                    // Key presence indicator
-                    Text(hasStoredKey
-                         ? "A key is stored for \(llmProvider.displayName)."
-                         : "No key stored for \(llmProvider.displayName).")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
 
                     // Model override (OpenRouter only — Anthropic uses its default model)
                     if llmProvider == .openrouter {
-                        TextField("Model (e.g. anthropic/claude-haiku-4-5)",
-                                  text: $openRouterModel)
+                        TextField("Model", text: $openRouterModel)
                             .textFieldStyle(.roundedBorder)
+                        Text("Example: anthropic/claude-haiku-4-5")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
                     }
 
                     // Two-stage flow: stage 1 = Tag Setup sheet (rename / recolor /
@@ -261,10 +256,16 @@ struct SettingsView: View {
                     HStack {
                         Button("Suggest tags for my apps…") {
                             #if SATUS_PRO
+                            // Probe Keychain here — at the moment we actually need a key —
+                            // rather than on Settings open.
+                            guard KeychainStore.hasKey(for: llmProvider) else {
+                                llmStatus = "No API key stored for \(llmProvider.displayName). Save one above first."
+                                return
+                            }
                             showTagSetupSheet = true
                             #endif
                         }
-                        .disabled(!hasStoredKey || isClassifying)
+                        .disabled(isClassifying)
                         if isClassifying {
                             ProgressView().controlSize(.small)
                         }
@@ -305,11 +306,9 @@ struct SettingsView: View {
                         .foregroundColor(.secondary)
                 }
                 .disabled(!AppService.isPro)
-                .onAppear { refreshKeyStatus() }
                 .onChange(of: llmProviderRaw) {
                     apiKeyInput = ""
                     llmStatus = nil
-                    refreshKeyStatus()
                 }
                 #if SATUS_PRO
                 .sheet(isPresented: $showTagSetupSheet) {
@@ -329,7 +328,7 @@ struct SettingsView: View {
                 Section("About") {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "Unknown")")
-                        Text("© 2025 Shimon Shmueli")
+                        Text("© 2026 Shimon Shmueli")
                     }
                     .font(.caption)
                     .foregroundColor(.secondary)
@@ -380,9 +379,15 @@ struct SettingsView: View {
         .tint(appService.accentColor)
         .onAppear {
             takeSnapshot()
+            // Tell the resign-active handler to leave the window alone
+            // while Settings (and any sheet nested in it) is on screen.
+            appService.isSettingsOpen = true
+        }
+        .onDisappear {
+            appService.isSettingsOpen = false
         }
     }
-    
+
     @State private var showExporter = false
     @State private var showImporter = false
     @State private var exportDocument: JSONDocument?
@@ -394,7 +399,6 @@ struct SettingsView: View {
     @AppStorage("llmProvider")      private var llmProviderRaw: String = KeychainStore.Provider.anthropic.rawValue
     @AppStorage("llmOpenRouterModel") private var openRouterModel: String = "anthropic/claude-haiku-4-5"
     @State private var apiKeyInput: String = ""
-    @State private var hasStoredKey: Bool = false
     @State private var llmStatus: String? = nil
     @State private var isClassifying: Bool = false
     #if SATUS_PRO
@@ -405,10 +409,6 @@ struct SettingsView: View {
 
     private var llmProvider: KeychainStore.Provider {
         KeychainStore.Provider(rawValue: llmProviderRaw) ?? .anthropic
-    }
-
-    private func refreshKeyStatus() {
-        hasStoredKey = KeychainStore.hasKey(for: llmProvider)
     }
 
     /// Classify all currently-untagged apps via the chosen provider, validate

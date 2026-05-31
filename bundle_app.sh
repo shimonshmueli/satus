@@ -99,9 +99,13 @@ else
     echo "✅ Using default Bundle ID (Production)"
 fi
 
-# 5. Sign (Ad-hoc)
-echo "Signing ZoneKey..."
-codesign --force --sign - "$APP_NAME/Contents/MacOS/ZoneKey"
+# 5. Sign (Ad-hoc) with the same entitlements production uses, so dev builds
+# exercise the sandbox the same way notarized builds do. Without this, dev
+# bundles run unsandboxed and silently hide sandbox bugs until release.
+echo "Signing ZoneKey with entitlements..."
+codesign --force --sign - \
+    --entitlements "Entitlements.plist" \
+    "$APP_NAME/Contents/MacOS/ZoneKey"
 echo "App signed."
 
 # 6. Install

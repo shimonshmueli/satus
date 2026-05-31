@@ -60,19 +60,10 @@ struct OpenRouterClient: LLMClient {
         req.setValue("ZoneKey",                                 forHTTPHeaderField: "X-Title")
         req.httpBody = try JSONEncoder().encode(body)
 
-        let (data, response): (Data, URLResponse)
-        do {
-            (data, response) = try await session.data(for: req)
-        } catch {
-            throw LLMError.transport(error)
-        }
-
-        guard let http = response as? HTTPURLResponse else {
-            throw LLMError.invalidResponse("Not an HTTP response")
-        }
-        guard (200..<300).contains(http.statusCode) else {
-            let body = String(data: data, encoding: .utf8) ?? ""
-            throw LLMError.http(status: http.statusCode, body: body)
+        // Retries on 429 with backoff; maps URL errors to friendly cases.
+        let (data, http) = try await performWithRateLimitRetry(req, session: session)
+        if let mapped = mapHTTPStatus(http, body: data) {
+            throw mapped
         }
 
         let decoded: ChatResponse

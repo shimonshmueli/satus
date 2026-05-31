@@ -8,5 +8,12 @@
     <true/>
     <key>com.apple.security.files.user-selected.read-write</key>
     <true/>
+    <!-- Allow sending Quit Apple Events to any other app. Required so
+         NSRunningApplication.terminate() succeeds inside the sandbox.
+         macOS still prompts the user once per target app the first time. -->
+    <key>com.apple.security.temporary-exception.apple-events</key>
+    <array>
+        <string>*</string>
+    </array>
 </dict>
 </plist>

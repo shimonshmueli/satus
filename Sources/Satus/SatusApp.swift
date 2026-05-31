@@ -51,9 +51,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
             
             if NSApplication.shared.isActive {
-                if AppService.shared?.isPinned != true {
-                    NSApplication.shared.hide(nil)
-                }
+                // Stay visible when pinned, or while Settings (and any sheet
+                // nested in it, like Tag Setup or Review) is on screen.
+                if AppService.shared?.isPinned == true { return }
+                if AppService.shared?.isSettingsOpen == true { return }
+                NSApplication.shared.hide(nil)
             }
         }
         
@@ -259,9 +261,12 @@ struct SatusApp: App {
                     // Previous logic moved to ContentView to access AppService
                 }
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
-                    if AppService.shared?.isPinned != true {
-                        NSApplication.shared.hide(nil)
-                    }
+                    // Stay visible when pinned, or while Settings is open
+                    // (which covers Tag Setup and Review since both are
+                    // nested inside Settings).
+                    if AppService.shared?.isPinned == true { return }
+                    if AppService.shared?.isSettingsOpen == true { return }
+                    NSApplication.shared.hide(nil)
                 }
         }
         .windowStyle(.hiddenTitleBar)

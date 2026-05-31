@@ -28,6 +28,10 @@ class AppService: ObservableObject {
     
     // Pin mode: prevents auto-close when active
     @Published var isPinned: Bool = false
+
+    // Settings open: prevents auto-close while Settings (and any sheet
+    // nested in it, like Tag Setup or Review) is on screen.
+    @Published var isSettingsOpen: Bool = false
     
     @Published var apps: [AppItem] = []
     @Published var tags: [AppTag] = []

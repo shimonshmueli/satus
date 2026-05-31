@@ -114,7 +114,9 @@ Two surfaces in Settings → Tag Suggestions (Pro):
 4. ✅ `Classifier` orchestration, validation pass, cache, batching, copy-status button.
 5. ✅ Two-stage flow: seven seed tags, `DefaultTags`, `TagSetupSheet`, constrained prompt,
    simplified `ReviewSuggestionsSheet`.
-6. Polish: rate-limit handling, error states beyond what the diagnostic already shows.
+6. ✅ Polish: HTTP 429 retry with backoff (honoring `Retry-After`), friendly inline errors
+   for `unauthorized` / `modelNotFound` / `rateLimited` / `notConnected`, shared HTTP helper
+   in `LLMClient.swift`. LLM tagging feature complete per v1 scope.
 
 ## Defaults locked unless revisited
 

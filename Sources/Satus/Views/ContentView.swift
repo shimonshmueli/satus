@@ -811,15 +811,10 @@ struct AppRowView: View {
                  }
              } else {
                  if let onQuit = onQuit {
-                     if isSandboxed {
-                         Button(role: .destructive, action: {}) {
-                             Label("Quit (Sandbox Restricted)", systemImage: "xmark.circle")
-                         }
-                         .disabled(true)
-                     } else {
-                         Button(role: .destructive, action: { onQuit(app) }) {
-                             Label("Quit", systemImage: "xmark.circle")
-                         }
+                     // Apple Events entitlement lets terminate() work inside the sandbox.
+                     // The system shows its own per-target Automation prompt the first time.
+                     Button(role: .destructive, action: { onQuit(app) }) {
+                         Label("Quit", systemImage: "xmark.circle")
                      }
                  } else {
                      Button(action: { onLaunch(app) }) {
