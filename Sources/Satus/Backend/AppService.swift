@@ -15,7 +15,10 @@ class AppService: ObservableObject {
         return false
         #endif
     }
-    static let freeTagLimit = 3
+    // Raised from 3 → 7 in v1.1 so the seven seed tags don't immediately collide
+    // with the Free tier cap. Free users still get the seeds out of the box;
+    // they can delete a seed and add a replacement, but can't grow past 7.
+    static let freeTagLimit = 7
     static let freeHiddenAppLimit = 3
     
     var canAddTag: Bool {
@@ -142,14 +145,18 @@ class AppService: ObservableObject {
             
             source.resume()
             folderMonitors.append(source)
+            #if DEBUG
             print("Monitoring for apps in: \(path)")
+            #endif
         }
     }
     
     private func handleAppDirectoryChange() {
         debounceTimer?.invalidate()
         debounceTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { [weak self] _ in
+            #if DEBUG
             print("App Directory Changed. Reloading apps...")
+            #endif
             Task { @MainActor in
                 self?.loadApps()
             }
@@ -217,7 +224,9 @@ class AppService: ObservableObject {
     private let persistenceURL: URL?
     
     init() {
+        #if DEBUG
         print("🚀 AppService init start")
+        #endif
         if let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
             let appDir = appSupport.appendingPathComponent("AppLibrary")
             try? fileManager.createDirectory(at: appDir, withIntermediateDirectories: true)
@@ -225,7 +234,9 @@ class AppService: ObservableObject {
             // Debug / Dev Isolation
             #if DEBUG
             self.persistenceURL = appDir.appendingPathComponent("user_prefs_dev.json")
+            #if DEBUG
             print("🔧 Using DEV persistence: user_prefs_dev.json")
+            #endif
             #else
             self.persistenceURL = appDir.appendingPathComponent("user_prefs_v2.json")
             #endif
@@ -400,7 +411,9 @@ class AppService: ObservableObject {
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
             if let output = String(data: data, encoding: .utf8) {
                 if output.contains("com.shimonshmueli.ZoneKey") {
+                    #if DEBUG
                     print("Found in Dock! Syncing preference.")
+                    #endif
                     DispatchQueue.main.async {
                         self.showInDock = true
                     }
@@ -413,7 +426,9 @@ class AppService: ObservableObject {
     
     // MARK: - Discovery
     func loadApps() {
+        #if DEBUG
         print("Scanning for applications...")
+        #endif
         var discoveredApps: [AppItem] = []
         
         let appsPath = "/Applications"
@@ -429,7 +444,9 @@ class AppService: ObservableObject {
         // Log duplicates before set
         let duplicates = Dictionary(grouping: discoveredApps, by: { $0.id }).filter { $1.count > 1 }
         for (id, apps) in duplicates {
+            #if DEBUG
             print("Duplicate ID found: \(id) -> \(apps.count) copies")
+            #endif
         }
         
         discoveredApps = Array(Set(discoveredApps))
@@ -443,7 +460,9 @@ class AppService: ObservableObject {
         
         // Migration: Rename "Other" -> "Utilities" if it exists (from old persistence)
         if let otherIndex = tags.firstIndex(where: { $0.name == "Other" }) {
+            #if DEBUG
             print("Migrating 'Other' tag to 'Utilities'")
+            #endif
             var tag = tags[otherIndex]
             tag.name = "Utilities"
             tags[otherIndex] = tag
@@ -463,14 +482,18 @@ class AppService: ObservableObject {
         let currentSwitcher = GlobalHotkey.shared.getShortcut(id: 6)
         
         if currentSwitcher == nil || currentSwitcher?.keyCode == 0 {
+            #if DEBUG
             print("Pre-populating App Switcher shortcut to Option+Tab (Default)")
+            #endif
             GlobalHotkey.shared.setShortcut(id: 6, keyCode: 48, modifiers: Int(NSEvent.ModifierFlags.option.rawValue))
         }
     }
     
     // MARK: - Keyword Prefetching
     func prefetchKeywords() {
+        #if DEBUG
         print("Prefetching keywords for apps in background...")
+        #endif
         Task.detached(priority: .background) {
             var fetchedKeywords: [String: [String]] = [:]
             
@@ -526,11 +549,13 @@ class AppService: ObservableObject {
             await MainActor.run {
                 self.appKeywords = finalKeywords
                 self.lastKeywordFetchDate = Date()
+                #if DEBUG
                 print("Keyword prefetch complete. Keywords stored for \(finalKeywords.count) apps.")
                 // Log a sample for debugging
                 for (id, kw) in finalKeywords.prefix(5) {
                     print("  \(id): \(kw)")
                 }
+                #endif
             }
         }
     }
@@ -1065,7 +1090,9 @@ class AppService: ObservableObject {
         
         // Try decoding as clean Manifest first
         if let manifest = try? JSONDecoder().decode(ExportManifest.self, from: data) {
+             #if DEBUG
              print("Importing Clean Manifest...")
+             #endif
              // Create a set of valid app IDs (only installed apps)
              let validAppIDs = Set(self.apps.map { $0.id })
              

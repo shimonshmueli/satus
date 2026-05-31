@@ -4,37 +4,46 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var helpWindow: NSWindow?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // 0. IMMEDIATE LOG
+        #if DEBUG
         print("!!! APP DELEGATE DID FINISH LAUNCHING (SYNCHRONOUS) !!!")
-        
+        #endif
+
         // 1. Identity: Ensure we are a regular app to show Menu Bar and Dock icon
         NSApplication.shared.setActivationPolicy(.regular)
-        
+
         // 2. Activation Stunt (Delayed for Xcode/Terminal focus stealing)
         // We do this in AppDelegate to GUARANTEE it runs, regardless of Window/View loading state.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            #if DEBUG
             print("---------- DIAGNOSTICS START (AppDelegate) ----------")
             print("Activation Policy: \(NSApplication.shared.activationPolicy().rawValue) (0=regular, 1=accessory, 2=prohibited)")
             print("App isActive: \(NSApplication.shared.isActive)")
-            
+            #endif
+
             // Aggressively force front
             NSApplication.shared.activate(ignoringOtherApps: true)
-            
+
             if let window = NSApplication.shared.windows.first {
+                #if DEBUG
                 print("Window FOUND. Title: '\(window.title)'")
                 print("Window canBecomeKey: \(window.canBecomeKey)")
+                #endif
                 // Check if we need to force it
                 if !window.isKeyWindow {
                     window.makeKeyAndOrderFront(nil)
                 }
+                #if DEBUG
                 print("Window isKeyWindow (Post-Force): \(window.isKeyWindow)")
+                #endif
             } else {
+                #if DEBUG
                 print("NO WINDOW FOUND! (This is unexpected in DidFinishLaunching with SwiftUI)")
-                // If SwiftUI hasn't created the window yet, we might be too early even with 0.5s?
-                // But usually the WindowGroup is initialized by now.
+                #endif
             }
+            #if DEBUG
             print("---------- DIAGNOSTICS END ----------")
-            
+            #endif
+
             // Re-apply menu to fight SwiftUI re-inserting default menus
             self.setupMinimalMenu()
         }

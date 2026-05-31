@@ -182,7 +182,9 @@ class GlobalHotkey: ObservableObject {
             if status == noErr, let ref = ref {
                 self.hotKeyRefs[def.id] = ref
                 self.failedRegistrationIDs.remove(def.id)
+                #if DEBUG
                 print("Registered Global Hotkey ID: \(def.id)")
+                #endif
             } else {
                 self.failedRegistrationIDs.insert(def.id)
                 print("Failed to register hotkey ID: \(def.id), status: \(status)")
