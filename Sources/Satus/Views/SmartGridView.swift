@@ -72,8 +72,7 @@ struct SmartGridView: View {
                                 onToggleTag: onToggleTag,
                                 onAddTag: onAddTag,
                                 onHoverApp: onHoverApp,
-                                availableTags: availableTags,
-                                isSandboxed: appService.isSandboxed
+                                availableTags: availableTags
                             )
                             .id(app.id)
                             .accessibilityLabel(app.name)
@@ -130,8 +129,8 @@ struct AppIconView: View {
     let onAddTag: (AppItem?) -> Void
     let onHoverApp: (AppItem?) -> Void
     let availableTags: [AppTag]
-    let isSandboxed: Bool
-    
+
+
     @EnvironmentObject var appService: AppService
     @State private var isHovering = false
     

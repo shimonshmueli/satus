@@ -23,11 +23,17 @@ struct AppDescriptor: Codable, Hashable {
 /// The model's proposed assignment for a single app. Existing-tags-only:
 /// the prompt forbids the model from inventing new tag names. Nothing here
 /// is applied until the user approves it in the review sheet.
+///
+/// `rationale` and `confidence` are optional because smaller / local models
+/// sometimes misspell or omit them (we've observed `"conference"` instead of
+/// `"confidence"`). Defaulting at validation time is much better than failing
+/// the whole batch over one typo. `bundleID` and `existingTagIDs` stay
+/// required — without them the row has nothing usable.
 struct Assignment: Codable, Hashable {
     let bundleID: String
     let existingTagIDs: [String]
-    let rationale: String
-    let confidence: Double
+    let rationale: String?
+    let confidence: Double?
 }
 
 // MARK: - Errors
@@ -75,6 +81,45 @@ enum LLMError: LocalizedError {
 protocol LLMClient {
     func classify(tags: [TagDescriptor],
                   apps: [AppDescriptor]) async throws -> [Assignment]
+}
+
+// MARK: - Shared wire envelopes
+
+/// The user message every provider sends. Same shape for Anthropic, OpenRouter,
+/// and Ollama — only the surrounding HTTP envelope differs per provider.
+struct ClassifyInput: Codable {
+    let existingTags: [TagDescriptor]
+    let apps: [AppDescriptor]
+}
+
+/// The model's reply. Decoder is tolerant: each element of `assignments` is
+/// tried independently and dropped on failure. A single misspelled field on
+/// one row (e.g. `"conference"` instead of `"confidence"`, or
+/// `"existingsTagIDs"` instead of `"existingTagIDs"`) costs us that row only,
+/// never the whole batch.
+struct ClassifyOutput: Codable {
+    let assignments: [Assignment]
+
+    enum CodingKeys: String, CodingKey { case assignments }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let raw = try container.decode([OptionalAssignment].self, forKey: .assignments)
+        self.assignments = raw.compactMap { $0.value }
+    }
+
+    init(assignments: [Assignment]) {
+        self.assignments = assignments
+    }
+}
+
+/// Wrapper that swallows decode errors on a single assignment and yields
+/// `nil` instead, so the parent array decode continues past the bad element.
+private struct OptionalAssignment: Codable {
+    let value: Assignment?
+    init(from decoder: Decoder) throws {
+        value = try? Assignment(from: decoder)
+    }
 }
 
 // MARK: - HTTP helpers (shared by both providers)

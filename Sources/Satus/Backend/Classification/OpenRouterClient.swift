@@ -131,14 +131,8 @@ struct OpenRouterClient: LLMClient {
 
 // MARK: - Wire types (OpenAI Chat Completions shape)
 
-private struct ClassifyInput: Codable {
-    let existingTags: [TagDescriptor]
-    let apps: [AppDescriptor]
-}
-
-private struct ClassifyOutput: Codable {
-    let assignments: [Assignment]
-}
+// ClassifyInput / ClassifyOutput now live in LLMClient.swift so the tolerant
+// per-element decoder is shared with the other providers.
 
 private struct ChatRequest: Codable {
     let model: String

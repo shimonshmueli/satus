@@ -10,13 +10,20 @@ enum KeychainStore {
     enum Provider: String, CaseIterable, Identifiable, Codable {
         case anthropic
         case openrouter
+        case ollama   // Local — does not use Keychain; configured by host + model.
 
         var id: String { rawValue }
         var displayName: String {
             switch self {
             case .anthropic:  return "Anthropic"
             case .openrouter: return "OpenRouter"
+            case .ollama:     return "Ollama (local)"
             }
+        }
+
+        /// Ollama is local-only and does not require a stored API key.
+        var requiresAPIKey: Bool {
+            self != .ollama
         }
     }
 

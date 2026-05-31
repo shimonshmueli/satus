@@ -217,13 +217,6 @@ class AppService: ObservableObject {
     private let persistenceURL: URL?
     
     init() {
-        self.isSandboxed = ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] != nil
-        if self.isSandboxed {
-            print("🔒 App is running in Sandbox mode.")
-        } else {
-            print("🔓 App is NOT sandboxed.")
-        }
-        
         print("🚀 AppService init start")
         if let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
             let appDir = appSupport.appendingPathComponent("AppLibrary")
@@ -254,9 +247,6 @@ class AppService: ObservableObject {
         
         AppService.shared = self
     }
-    
-    // Sandbox State
-    let isSandboxed: Bool
     
     
     
@@ -312,13 +302,18 @@ class AppService: ObservableObject {
             
             // Priority Check: Escape (53) should always trigger, regardless of focus
             if key == 53 {
+                 // Settings open: Escape is a no-op. The user must dismiss via
+                 // the Done button or the X — don't yank the whole app from
+                 // under their unsaved edits.
+                 if self.isSettingsOpen { return nil }
+
                  if let keyWindow = NSApplication.shared.keyWindow {
                       if keyWindow.title == "ZoneKey Help" || keyWindow.title.starts(with: "About ") {
                           keyWindow.close()
                           return nil
                       }
                  }
-                 
+
                  if !self.isPinned {
                      NSApplication.shared.hide(nil)
                  }

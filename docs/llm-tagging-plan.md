@@ -1,13 +1,17 @@
-# LLM-Suggested Tags — Implementation Plan
+# AutoTag — Implementation Plan
 <!-- © Shimon Shmueli -->
 
-Working plan for ZoneKey's "let an LLM classify my apps into my tags" feature.
-Source of truth while we build; update in the same turn as any decision change.
+Working plan for ZoneKey's **AutoTag** feature: let an LLM classify the user's
+installed apps into their tags. Source of truth while we build; update in the
+same turn as any decision change.
 
 > **Strategy revision (May 30):** dropped the original free-form "model proposes
 > new tag names" approach. The model now picks only from the user's existing tag
 > set. A new Stage-1 setup sheet lets the user curate that tag set before any
 > network call, and the app ships out of the box with seven default seed tags.
+
+> **v1.1 addition:** Ollama support (local-only, no API key). Feature renamed
+> from "Tag Suggestions" to **AutoTag** across all user-facing strings.
 
 ---
 
@@ -16,7 +20,7 @@ Source of truth while we build; update in the same turn as any decision change.
 - **Pro only.** Feature lives behind the existing compile-time Pro flag. In the Free build the
   Settings entry is visible but grayed out with an upgrade caption; no LLM or networking code
   ships in Free.
-- **Providers:** Anthropic and OpenRouter at launch, behind a provider-agnostic `LLMClient` protocol.
+- **Providers:** Anthropic, OpenRouter, and Ollama (local), behind a provider-agnostic `LLMClient` protocol. Ollama added in v1.1 — does not require an API key; configured by host URL + model name.
 - **Trigger:** manual only. A single "Suggest tags for my apps…" button in Settings.
 - **Two-stage flow:**
   - **Stage 1 — Tag Setup sheet.** Editable list of the user's current tags (rename, recolor,
@@ -46,6 +50,9 @@ Source of truth while we build; update in the same turn as any decision change.
   - Anthropic: `claude-haiku-4-5-20251001`, `max_tokens: 8192`
   - OpenRouter: `anthropic/claude-haiku-4-5` (overridable in Settings), `max_tokens: 8192`,
     `response_format: {type: "json_object"}`
+  - Ollama: host `http://localhost:11434`, model `llama3.2` (both overridable in Settings),
+    OpenAI-compatible `/v1/chat/completions`, no auth, 120s timeout for warm-up
+    on first request
 - **Batching:** 20 apps per LLM request (`Classifier.appsPerBatch`). Batches stitched into one
   validated list before the review sheet opens.
 - **Key storage:** macOS Keychain via a thin local wrapper. One key slot per provider.
@@ -92,13 +99,14 @@ changed). On format mismatch the cache silently rebuilds.
 | `Sources/Satus/Backend/Classification/LLMClient.swift` | Protocol + request/response DTOs + shared diagnostic. Pro only. |
 | `Sources/Satus/Backend/Classification/AnthropicClient.swift` | Anthropic Messages API impl. Pro only. |
 | `Sources/Satus/Backend/Classification/OpenRouterClient.swift` | OpenRouter (OpenAI-style) impl. Pro only. |
+| `Sources/Satus/Backend/Classification/OllamaClient.swift` | Local Ollama (OpenAI-compatible) impl. Pro only. |
 | `Sources/Satus/Backend/Classification/Classifier.swift` | Prompt assembly, validation, cache, batching. Pro only. |
 | `Sources/Satus/Views/TagSetupSheet.swift` | Stage-1 sheet (curate tags before classifying). Pro only. |
 | `Sources/Satus/Views/ReviewSuggestionsSheet.swift` | Stage-2 sheet (accept/reject per-app). Pro only. |
 
 ## UI
 
-Two surfaces in Settings → Tag Suggestions (Pro):
+Two surfaces in Settings → AutoTag (Pro):
 
 1. **Settings section:** provider picker (Anthropic / OpenRouter), API key (Keychain), optional
    OpenRouter model override, "Suggest tags for my apps…" button, inline status with a
@@ -136,5 +144,5 @@ Two surfaces in Settings → Tag Suggestions (Pro):
 - Drag-to-different-tag or inline edit of suggestions in the review sheet.
 - "Reclassify all apps" mode.
 - Removal suggestions (model proposing to un-tag an app).
-- Local-model option (Ollama or similar).
+<!-- Ollama support landed in v1.1 — removed from out-of-scope. -->
 - Persisted description field on `AppTag` for user-added or renamed tags.

@@ -122,13 +122,16 @@ struct Classifier {
             return uuid
         }
 
-        let confidence = max(0.0, min(1.0, a.confidence))
+        // Default missing/misspelled optional fields. 0.5 means "no opinion"
+        // for confidence; empty string is fine for an absent rationale.
+        let confidence = max(0.0, min(1.0, a.confidence ?? 0.5))
+        let rationale  = a.rationale ?? ""
 
         return (
             ValidatedAssignment(
                 bundleID: a.bundleID,
                 existingTagIDs: cleanedIDs,
-                rationale: a.rationale,
+                rationale: rationale,
                 confidence: confidence
             ),
             droppedIDs
@@ -137,14 +140,15 @@ struct Classifier {
 
     // MARK: - Hash / key helpers
 
-    /// Stable SHA-256 over the sorted, lowercased tag-name set. Stable across
-    /// launches (Swift's `hashValue` is not), so the cache survives relaunches
-    /// when the tag set is unchanged.
+    /// Stable SHA-256 over `(UUID, lowercased name)` pairs, sorted. Includes
+    /// UUIDs so any identity change — rename, delete, add, or "Reset to
+    /// defaults" (which keeps the names but mints fresh UUIDs) — invalidates
+    /// the cache. Stable across launches (Swift's `hashValue` is not).
     private static func tagSetHash(_ tags: [AppTag]) -> String {
         let joined = tags
-            .map { $0.name.lowercased() }
+            .map { "\($0.id.uuidString)|\($0.name.lowercased())" }
             .sorted()
-            .joined(separator: "\u{1F}")  // ASCII unit separator — won't collide with names
+            .joined(separator: "\u{1F}")  // ASCII unit separator — won't collide
         let digest = SHA256.hash(data: Data(joined.utf8))
         return digest.map { String(format: "%02x", $0) }.joined()
     }

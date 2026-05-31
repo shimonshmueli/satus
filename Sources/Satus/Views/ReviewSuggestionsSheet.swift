@@ -96,19 +96,27 @@ struct ReviewSuggestionsSheet: View {
         Dictionary(uniqueKeysWithValues: appService.apps.map { ($0.id, $0) })
     }
 
-    /// An accepted row only counts toward Apply if it actually carries at least
-    /// one existing tag suggestion — empty assignments add nothing.
+    /// An accepted row only counts toward Apply if at least one of its
+    /// `existingTagIDs` still resolves to a real tag. Stale UUIDs (from a
+    /// cache that survived a tag-set change) don't count.
     private var applicableCount: Int {
-        rows.reduce(0) { count, row in
-            count + (row.accepted && !row.assignment.existingTagIDs.isEmpty ? 1 : 0)
+        let validIDs = Set(appService.tags.map { $0.id })
+        return rows.reduce(0) { count, row in
+            guard row.accepted else { return count }
+            let resolvable = row.assignment.existingTagIDs.contains { validIDs.contains($0) }
+            return count + (resolvable ? 1 : 0)
         }
     }
 
     // MARK: - State init
 
     private func buildInitialState() {
+        // Defense in depth: only show rows whose UUIDs resolve to real tags.
+        // If the cache fix above ever regresses, a stale state surfaces as
+        // "App Assignments (0)" rather than a screenful of ghost rows.
+        let validIDs = Set(appService.tags.map { $0.id })
         rows = assignments
-            .filter { !$0.existingTagIDs.isEmpty }
+            .filter { a in a.existingTagIDs.contains { validIDs.contains($0) } }
             .sorted { $0.confidence > $1.confidence }
             .map { Row(assignment: $0, accepted: true) }
     }
@@ -136,8 +144,9 @@ private struct AppAssignmentRow: View {
 
     var body: some View {
         let app = appsByID[row.assignment.bundleID]
-        let tagNames: [String] = row.assignment.existingTagIDs.compactMap { id in
-            allTags.first { $0.id == id }?.name
+        // Resolve full AppTag values so each chip can carry the tag's own color.
+        let assignedTags: [AppTag] = row.assignment.existingTagIDs.compactMap { id in
+            allTags.first { $0.id == id }
         }
 
         HStack(alignment: .center, spacing: 12) {
@@ -153,22 +162,24 @@ private struct AppAssignmentRow: View {
             }
             .frame(width: 28, height: 28)
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(app?.name ?? row.assignment.bundleID)
-                    .font(.subheadline)
-                HStack(spacing: 4) {
-                    ForEach(tagNames, id: \.self) { name in
-                        Text(name)
-                            .font(.caption2)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Capsule().fill(Color.secondary.opacity(0.22)))
-                    }
+            // Name + chips on the same horizontal line so the chips are visible
+            // even in a tight row. Chip color = tag color (with a stroke border)
+            // so they read clearly against the dark background.
+            Text(app?.name ?? row.assignment.bundleID)
+                .font(.subheadline)
+                .lineLimit(1)
+
+            HStack(spacing: 4) {
+                ForEach(assignedTags, id: \.id) { tag in
+                    let color = Color.fromHex(tag.colorHex ?? "#8E8E93")
+                    Text(tag.name)
+                        .font(.caption2)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(color.opacity(0.35)))
+                        .overlay(Capsule().strokeBorder(color, lineWidth: 1))
                 }
             }
-            .help(row.assignment.rationale.isEmpty
-                  ? "(No rationale provided)"
-                  : row.assignment.rationale)
 
             Spacer()
 
@@ -179,6 +190,9 @@ private struct AppAssignmentRow: View {
         }
         .padding(.vertical, 2)
         .opacity(row.accepted ? 1.0 : 0.55)
+        .help(row.assignment.rationale.isEmpty
+              ? "(No rationale provided)"
+              : row.assignment.rationale)
     }
 }
 #endif

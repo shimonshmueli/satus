@@ -234,7 +234,6 @@ struct ContentView: View {
                                                     appService.switcherTargetID = app.id
                                                 }
                                             },
-                                            isSandboxed: appService.isSandboxed,
                                             focusedAppID: $appService.focusedAppID
                                         )
                                     }
@@ -323,7 +322,6 @@ struct ContentView: View {
                                                 }
                                             },
                                             onHoverApp: { app in hoveredAppName = app?.name },
-                                            isSandboxed: appService.isSandboxed,
                                             focusedAppID: $appService.focusedAppID
                                         )
                                     }
@@ -644,7 +642,6 @@ struct HiddenAppsDropZone: View {
                         onToggleTag: { _, _ in },
                         onAddTag: { _ in },
                         onHoverApp: { app in hoveredAppName = app?.name },
-                        isSandboxed: appService.isSandboxed,
                         focusedAppID: .constant(nil)
                     )
                 }
@@ -684,8 +681,7 @@ struct AppListView: View {
 
     let onAddTag: (AppItem?) -> Void
     let onHoverApp: (AppItem?) -> Void
-    let isSandboxed: Bool
-    
+
     @Binding var focusedAppID: String?
     
     var body: some View {
@@ -703,8 +699,7 @@ struct AppListView: View {
                         onToggleTag: onToggleTag,
                         onAddTag: onAddTag,
                         onHoverApp: onHoverApp,
-                        isFocused: focusedAppID == app.id,
-                        isSandboxed: isSandboxed
+                        isFocused: focusedAppID == app.id
                     )
                     .id(app.id)
                     
@@ -743,8 +738,8 @@ struct AppRowView: View {
     let onAddTag: (AppItem?) -> Void
     let onHoverApp: (AppItem?) -> Void
     let isFocused: Bool
-    let isSandboxed: Bool
-    
+
+
     @EnvironmentObject var appService: AppService
     @State private var hoveredAppId: String? = nil
     

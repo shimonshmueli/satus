@@ -218,34 +218,68 @@ struct SettingsView: View {
                         }
                     }
 
-                    // API key field + Save / Clear.
-                    // Keychain is probed only at action time (Save, Clear, or
-                    // Suggest tags…). Opening Settings does not touch Keychain.
-                    HStack {
-                        SecureField("API Key", text: $apiKeyInput)
-                            .textFieldStyle(.roundedBorder)
-                        Button("Save") {
-                            if KeychainStore.save(apiKeyInput, for: llmProvider) {
-                                apiKeyInput = ""
-                                llmStatus = "Key saved for \(llmProvider.displayName)."
-                            } else {
-                                llmStatus = "Failed to save key."
+                    // Per-provider configuration. Keychain is only probed at action
+                    // time (Paste, Clear, Run AutoTag…). Opening Settings does not
+                    // touch Keychain.
+                    //
+                    // We use a "Paste API Key from clipboard" button instead of a
+                    // SecureField so the key is never visible on screen, never
+                    // lives in @State, and the user can't accidentally type into
+                    // the wrong field.
+                    if llmProvider.requiresAPIKey {
+                        HStack {
+                            Button("Paste API Key from clipboard") {
+                                let pb = NSPasteboard.general
+                                let raw = pb.string(forType: .string) ?? ""
+                                let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                                guard !trimmed.isEmpty else {
+                                    llmStatus = "Clipboard is empty or doesn't contain text."
+                                    return
+                                }
+                                if KeychainStore.save(trimmed, for: llmProvider) {
+                                    hasStoredKey = true
+                                    llmStatus = "Key saved for \(llmProvider.displayName)."
+                                } else {
+                                    llmStatus = "Failed to save key."
+                                }
                             }
-                        }
-                        .disabled(apiKeyInput.trimmingCharacters(in: .whitespaces).isEmpty)
-                        Button("Clear") {
-                            // Idempotent — delete-when-absent is harmless.
-                            KeychainStore.delete(for: llmProvider)
-                            apiKeyInput = ""
-                            llmStatus = "Key cleared for \(llmProvider.displayName)."
+                            .disabled(hasStoredKey)
+                            .help(hasStoredKey
+                                  ? "A key is already stored for \(llmProvider.displayName). Clear it first to replace."
+                                  : "Paste an API key from the clipboard into the Keychain.")
+                            Button("Clear") {
+                                // Idempotent — delete-when-absent is harmless.
+                                KeychainStore.delete(for: llmProvider)
+                                hasStoredKey = false
+                                llmStatus = "Key cleared for \(llmProvider.displayName)."
+                            }
                         }
                     }
 
                     // Model override (OpenRouter only — Anthropic uses its default model)
                     if llmProvider == .openrouter {
-                        TextField("Model", text: $openRouterModel)
+                        HStack(spacing: 8) {
+                            TextField("Model", text: $openRouterModel)
+                                .textFieldStyle(.roundedBorder)
+                            Link(destination: URL(string: "https://openrouter.ai/models")!) {
+                                Image(systemName: "arrow.up.right.square")
+                                    .font(.title3)
+                            }
+                            .help("Browse models on openrouter.ai")
+                        }
+                        Text("Format: provider/model-id (e.g. anthropic/claude-haiku-4-5)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    // Ollama: host + model. No API key. The user must have the model
+                    // pulled locally via `ollama pull <model>` before running.
+                    if llmProvider == .ollama {
+                        TextField("Host", text: $ollamaHost)
                             .textFieldStyle(.roundedBorder)
-                        Text("Example: anthropic/claude-haiku-4-5")
+                        TextField("Model", text: $ollamaModel)
+                            .textFieldStyle(.roundedBorder)
+                        Text("Local model via Ollama. Default host http://localhost:11434. Pull a model first: ollama pull llama3.2")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
@@ -254,11 +288,13 @@ struct SettingsView: View {
                     // delete / add); stage 2 = Classifier + Review sheet, kicked off
                     // automatically when the user presses Continue in stage 1.
                     HStack {
-                        Button("Suggest tags for my apps…") {
+                        Button("Run AutoTag…") {
                             #if SATUS_PRO
                             // Probe Keychain here — at the moment we actually need a key —
-                            // rather than on Settings open.
-                            guard KeychainStore.hasKey(for: llmProvider) else {
+                            // rather than on Settings open. Ollama skips this since it's
+                            // a local provider with no API key.
+                            if llmProvider.requiresAPIKey
+                               && !KeychainStore.hasKey(for: llmProvider) {
                                 llmStatus = "No API key stored for \(llmProvider.displayName). Save one above first."
                                 return
                             }
@@ -291,7 +327,7 @@ struct SettingsView: View {
                     }
                 } header: {
                     HStack(spacing: 6) {
-                        Text("Tag Suggestions")
+                        Text("AutoTag")
                         Text("PRO")
                             .font(.caption2)
                             .fontWeight(.bold)
@@ -306,9 +342,10 @@ struct SettingsView: View {
                         .foregroundColor(.secondary)
                 }
                 .disabled(!AppService.isPro)
+                .onAppear { refreshKeyStatus() }
                 .onChange(of: llmProviderRaw) {
-                    apiKeyInput = ""
                     llmStatus = nil
+                    refreshKeyStatus()
                 }
                 #if SATUS_PRO
                 .sheet(isPresented: $showTagSetupSheet) {
@@ -394,13 +431,19 @@ struct SettingsView: View {
     @State private var importStatus: String?
     @State private var isPrefetching = false
 
-    // LLM tag-suggestions (Pro). Provider selection + model override persist
+    // AutoTag (Pro). Provider selection + model override persist
     // across launches; the API key itself lives in the Keychain (KeychainStore).
-    @AppStorage("llmProvider")      private var llmProviderRaw: String = KeychainStore.Provider.anthropic.rawValue
+    @AppStorage("llmProvider")        private var llmProviderRaw: String = KeychainStore.Provider.anthropic.rawValue
     @AppStorage("llmOpenRouterModel") private var openRouterModel: String = "anthropic/claude-haiku-4-5"
-    @State private var apiKeyInput: String = ""
+    @AppStorage("llmOllamaHost")      private var ollamaHost: String = "http://localhost:11434"
+    @AppStorage("llmOllamaModel")     private var ollamaModel: String = "llama3.2"
     @State private var llmStatus: String? = nil
     @State private var isClassifying: Bool = false
+    // Tracks whether a Keychain key exists for the current provider. Probed at
+    // action time (Paste, Clear, provider switch) and once per Settings open.
+    // Used only to gate the Paste button's disabled state — the key itself never
+    // lives in view state.
+    @State private var hasStoredKey: Bool = false
     #if SATUS_PRO
     @State private var pendingReviewAssignments: [ValidatedAssignment] = []
     @State private var showReviewSheet: Bool = false
@@ -409,6 +452,10 @@ struct SettingsView: View {
 
     private var llmProvider: KeychainStore.Provider {
         KeychainStore.Provider(rawValue: llmProviderRaw) ?? .anthropic
+    }
+
+    private func refreshKeyStatus() {
+        hasStoredKey = llmProvider.requiresAPIKey && KeychainStore.hasKey(for: llmProvider)
     }
 
     /// Classify all currently-untagged apps via the chosen provider, validate
@@ -429,6 +476,8 @@ struct SettingsView: View {
         let tagsSnapshot = appService.tags
         let provider = llmProvider
         let modelOverride = openRouterModel
+        let ollamaHostSnapshot = ollamaHost
+        let ollamaModelSnapshot = ollamaModel
 
         Task { @MainActor in
             defer { isClassifying = false }
@@ -437,6 +486,7 @@ struct SettingsView: View {
                 switch provider {
                 case .anthropic:  client = AnthropicClient()
                 case .openrouter: client = OpenRouterClient(model: modelOverride)
+                case .ollama:     client = OllamaClient(host: ollamaHostSnapshot, model: ollamaModelSnapshot)
                 }
                 let run = try await Classifier(client: client)
                     .suggest(for: appsSnapshot, existingTags: tagsSnapshot)
