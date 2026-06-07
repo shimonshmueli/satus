@@ -53,20 +53,26 @@ struct HeadlessView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
+                let totalOutdated = records.lazy.filter { $0.latestVersion != nil }.count
                 chip(label: "All", symbol: "circle.grid.2x2",
+                     badge: totalOutdated > 0 ? "\(totalOutdated)" : nil,
                      isActive: activeBackendID == "all") { activeBackendID = "all" }
                 ForEach(availableBackends, id: \.id) { be in
+                    let count = outdatedCount(for: be.id)
                     chip(label: be.name, symbol: be.symbol,
+                         badge: count > 0 ? "\(count)" : nil,
                          isActive: activeBackendID == be.id) { activeBackendID = be.id }
                 }
                 Spacer()
                 Button {
-                    Task { await loadAll() }
+                    // Explicit user-driven refresh — bypass the disk cache
+                    // and re-run `brew list` + `brew outdated` now.
+                    Task { await loadAll(forceRefresh: true) }
                 } label: {
                     Image(systemName: "arrow.clockwise")
                 }
                 .buttonStyle(.borderless)
-                .help("Refresh")
+                .help("Refresh (bypass cache)")
                 .disabled(isLoading)
             }
 
@@ -88,12 +94,23 @@ struct HeadlessView: View {
     @ViewBuilder
     private func chip(label: String,
                       symbol: String,
+                      badge: String? = nil,
                       isActive: Bool,
                       action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 4) {
                 Image(systemName: symbol).font(.caption)
                 Text(label).font(.caption)
+                if let badge = badge {
+                    // Outdated-count pill on the chip — orange to draw the eye
+                    // without screaming red.
+                    Text(badge)
+                        .font(.caption2.monospacedDigit().bold())
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(Capsule().fill(Color.orange))
+                }
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
@@ -184,21 +201,90 @@ struct HeadlessView: View {
 
     // MARK: - Loading
 
-    private func loadAll() async {
+    /// Progressive load. Three paths:
+    ///   1. Cache hit (within TTL): show cached records, done.
+    ///   2. Cache miss, fast list first: show `list()` records immediately
+    ///      (sub-second), then fire `outdated()` in the background and
+    ///      merge its badges into the visible list when it returns.
+    ///   3. Force refresh: invalidate cache, run the same fast-then-slow flow.
+    private func loadAll(forceRefresh: Bool = false) async {
         isLoading = true
         loadError = nil
-        defer { isLoading = false }
 
-        var collected: [PackageRecord] = []
+        let brew = HomebrewBackend()
+        guard brew.isAvailable else {
+            isLoading = false
+            return
+        }
+
+        if forceRefresh {
+            HeadlessCache.invalidate(backendID: HomebrewBackend.backendID)
+        }
+
+        // Path 1: cache hit.
+        if let cached = HeadlessCache.load(backendID: HomebrewBackend.backendID) {
+            records = cached.records
+            isLoading = false
+            return
+        }
+
+        // Path 2/3: show fast list first, enrich with outdated after.
         do {
-            let brew = HomebrewBackend()
-            if brew.isAvailable {
-                collected.append(contentsOf: try await brew.list())
+            let fast = try await brew.list()
+            records = fast                 // first paint — no badges yet
+            isLoading = false              // spinner goes away here
+
+            // Run outdated() in the background. Don't block the UI.
+            // If it throws or times out we keep the badge-less list visible.
+            Task {
+                do {
+                    let outdated = try await brew.outdated()
+                    let merged = Self.merge(list: fast, outdated: outdated)
+                    await MainActor.run { records = merged }
+                    HeadlessCache.save(backendID: HomebrewBackend.backendID,
+                                       records: merged)
+                } catch {
+                    // Persist what we have so a cache hit on next launch
+                    // still skips the slow call; user can hit Refresh later.
+                    HeadlessCache.save(backendID: HomebrewBackend.backendID,
+                                       records: fast)
+                    await MainActor.run {
+                        loadError = "Outdated check failed: \(error.localizedDescription)"
+                    }
+                }
             }
-            records = collected
         } catch {
+            isLoading = false
             loadError = error.localizedDescription
         }
+    }
+
+    /// Merges `outdated` (carries `latestVersion`) onto `list` by `id`.
+    /// Anything in `list` that doesn't appear outdated keeps `latestVersion == nil`.
+    private static func merge(list: [PackageRecord],
+                              outdated: [PackageRecord]) -> [PackageRecord] {
+        let outdatedByID = Dictionary(uniqueKeysWithValues: outdated.map { ($0.id, $0) })
+        return list.map { row in
+            guard let o = outdatedByID[row.id] else { return row }
+            return PackageRecord(
+                id: row.id,
+                backendID: row.backendID,
+                name: row.name,
+                version: row.version ?? o.version,
+                latestVersion: o.latestVersion,
+                summary: row.summary,
+                homepage: row.homepage,
+                installedAt: row.installedAt,
+                kind: row.kind
+            )
+        }
+    }
+
+    /// Count of outdated records for a given backend (used by the chip badge).
+    fileprivate func outdatedCount(for backendID: String) -> Int {
+        records.lazy
+            .filter { $0.backendID == backendID && $0.latestVersion != nil }
+            .count
     }
 }
 
@@ -219,6 +305,16 @@ private struct RecordRow: View {
                         Text(v)
                             .font(.caption2.monospacedDigit())
                             .foregroundColor(.secondary)
+                    }
+                    if let latest = record.latestVersion {
+                        // The orange chip means: there's a newer version
+                        // available. Action to upgrade comes in Step 4.
+                        Text("→ \(latest)")
+                            .font(.caption2.monospacedDigit().bold())
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(Capsule().fill(Color.orange))
                     }
                 }
                 if let summary = record.summary, !summary.isEmpty {

@@ -40,12 +40,60 @@ struct HomebrewBackend: PackageManager {
         return formulaRecords + caskRecords
     }
 
-    // Stubs filled in by Steps 3 and 5 of the plan.
-    func outdated() async throws -> [PackageRecord] { [] }
+    /// Returns one record per outdated package, with `latestVersion` populated.
+    /// Caller merges this against the result of `list()` to set indicators.
+    func outdated() async throws -> [PackageRecord] {
+        guard let brew = brewPath else { return [] }
+        // `brew outdated --json=v2` is fast (no Cellar walk; consults cached
+        // formula metadata). 8s is generous on a 200-formula brew.
+        // Slow on machines with many formulae — brew walks homebrew-core
+        // to compute latest versions. Observed: ~25s on a 162-package brew.
+        let output = try await Shell.run(brew,
+                                         ["outdated", "--json=v2"],
+                                         timeout: 60.0)
+        return try Self.parseOutdated(output)
+    }
+
+    // Dependency stubs — Step 5.
     func dependencies(of record: PackageRecord) async throws -> [String] { [] }
     func reverseDependencies(of record: PackageRecord) async throws -> [String] { [] }
 
     // MARK: - Output parsing
+
+    /// Decodes the `brew outdated --json=v2` envelope into records.
+    /// Each record carries `latestVersion`; `version` is the currently
+    /// installed one. Other fields are left nil since merge-by-name into
+    /// the full list will fill them in.
+    private static func parseOutdated(_ jsonString: String) throws -> [PackageRecord] {
+        guard let data = jsonString.data(using: .utf8) else { return [] }
+        let envelope = try JSONDecoder().decode(BrewOutdatedEnvelope.self, from: data)
+
+        let formulaRecords: [PackageRecord] = envelope.formulae.map { f in
+            PackageRecord(
+                id: "\(HomebrewBackend.backendID)|formula|\(f.name)",
+                backendID: HomebrewBackend.backendID,
+                name: f.name,
+                version: f.installed_versions.first,
+                latestVersion: f.current_version,
+                summary: nil, homepage: nil, installedAt: nil,
+                kind: .formula
+            )
+        }
+        let caskRecords: [PackageRecord] = envelope.casks.map { c in
+            PackageRecord(
+                id: "\(HomebrewBackend.backendID)|cask|\(c.name)",
+                backendID: HomebrewBackend.backendID,
+                name: c.name,
+                // Cask installed_versions can be string OR array depending on
+                // brew version; we accept both via FlexibleInstalledVersions.
+                version: c.installed_versions.first,
+                latestVersion: c.current_version,
+                summary: nil, homepage: nil, installedAt: nil,
+                kind: .cask
+            )
+        }
+        return formulaRecords + caskRecords
+    }
 
     /// `brew list --versions` output is one line per package, space-separated:
     ///     git 2.50.0_1
@@ -73,5 +121,47 @@ struct HomebrewBackend: PackageManager {
             ))
         }
         return out
+    }
+}
+
+// MARK: - Wire types (brew outdated --json=v2)
+
+private struct BrewOutdatedEnvelope: Codable {
+    let formulae: [Formula]
+    let casks: [Cask]
+
+    struct Formula: Codable {
+        let name: String
+        let installed_versions: [String]
+        let current_version: String
+    }
+
+    /// Casks: brew alternates between a string and an array for
+    /// `installed_versions` across versions. Accept either.
+    struct Cask: Codable {
+        let name: String
+        let installed_versions: FlexibleInstalledVersions
+        let current_version: String
+    }
+
+    /// Decodes either a single string or an array of strings into [String].
+    struct FlexibleInstalledVersions: Codable {
+        let first: String?
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.singleValueContainer()
+            if let single = try? c.decode(String.self) {
+                self.first = single
+            } else if let arr = try? c.decode([String].self) {
+                self.first = arr.first
+            } else {
+                self.first = nil
+            }
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var c = encoder.singleValueContainer()
+            try c.encode(first ?? "")
+        }
     }
 }

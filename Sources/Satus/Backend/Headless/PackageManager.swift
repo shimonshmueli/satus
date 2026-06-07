@@ -4,7 +4,7 @@ import Foundation
 /// One installed package or service shown in the Headless view.
 /// Backend-agnostic so Homebrew formulae, npm globals, pip wheels, and
 /// LaunchAgents can all coexist in the same UI list.
-struct PackageRecord: Identifiable, Hashable {
+struct PackageRecord: Identifiable, Hashable, Codable {
     /// Unique across backends: `"<backendID>|<kind>|<name>"`.
     let id: String
 
