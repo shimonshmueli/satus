@@ -873,6 +873,11 @@ class AppService: ObservableObject {
                 return getItemsForTag(tag)
             }
             return []
+        case .headless:
+            // Headless view supplies its own data via HeadlessView's task,
+            // not via the AppItem list. Return empty so callers that walk
+            // this list (search filters, grid renderers) see nothing.
+            return []
         }
     }
     

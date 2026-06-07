@@ -25,12 +25,19 @@ struct HomebrewBackend: PackageManager {
 
     func list() async throws -> [PackageRecord] {
         guard let brew = brewPath else { return [] }
-        // Generous timeout — power-user machines with many formulae take
-        // several seconds for this call. Step 3 will add caching.
-        let output = try await Shell.run(brew,
-                                         ["info", "--json=v2", "--installed"],
-                                         timeout: 30.0)
-        return try Self.parse(output)
+
+        // Use the FAST path: `brew list --versions --<kind>` returns one line
+        // per package as `name v1 v2 ...`. Sub-second even on a 200-package
+        // brew. We accept the trade-off of no descriptions/homepages here;
+        // those come from on-demand `brew info --json=v2 <name>` in Step 5
+        // (dependency popover) or via background enrichment in Step 3.
+        async let formulaeOut = Shell.run(brew, ["list", "--versions", "--formula"], timeout: 15.0)
+        async let casksOut    = Shell.run(brew, ["list", "--versions", "--cask"],    timeout: 15.0)
+        let (formulae, casks) = try await (formulaeOut, casksOut)
+
+        let formulaRecords = parseListVersions(formulae, kind: .formula)
+        let caskRecords    = parseListVersions(casks,    kind: .cask)
+        return formulaRecords + caskRecords
     }
 
     // Stubs filled in by Steps 3 and 5 of the plan.
@@ -38,72 +45,33 @@ struct HomebrewBackend: PackageManager {
     func dependencies(of record: PackageRecord) async throws -> [String] { [] }
     func reverseDependencies(of record: PackageRecord) async throws -> [String] { [] }
 
-    // MARK: - JSON parsing
+    // MARK: - Output parsing
 
-    private static func parse(_ jsonString: String) throws -> [PackageRecord] {
-        guard let data = jsonString.data(using: .utf8) else { return [] }
-        let envelope = try JSONDecoder().decode(BrewEnvelope.self, from: data)
-
-        let formulaeRecords = envelope.formulae.map { $0.toRecord() }
-        let caskRecords     = envelope.casks.map { $0.toRecord() }
-        return formulaeRecords + caskRecords
-    }
-}
-
-// MARK: - Wire types (brew info --json=v2 --installed)
-
-/// Top-level envelope. Both arrays are always present; either can be empty.
-private struct BrewEnvelope: Codable {
-    let formulae: [BrewFormula]
-    let casks: [BrewCask]
-}
-
-private struct BrewFormula: Codable {
-    let name: String
-    let desc: String?
-    let homepage: String?
-    let installed: [InstalledVersion]
-
-    struct InstalledVersion: Codable {
-        let version: String
-    }
-
-    func toRecord() -> PackageRecord {
-        PackageRecord(
-            id: "\(HomebrewBackend.backendID)|formula|\(name)",
-            backendID: HomebrewBackend.backendID,
-            name: name,
-            version: installed.first?.version,
-            latestVersion: nil,
-            summary: desc,
-            homepage: homepage.flatMap { URL(string: $0) },
-            installedAt: nil,
-            kind: .formula
-        )
-    }
-}
-
-private struct BrewCask: Codable {
-    let token: String
-    let name: [String]?
-    let desc: String?
-    let homepage: String?
-    let installed: String?      // casks expose this as a single version string
-
-    func toRecord() -> PackageRecord {
-        // `name` is an array of display names; the first entry is the
-        // canonical user-facing label (e.g. "Visual Studio Code" for `vscode`).
-        let displayName = name?.first ?? token
-        return PackageRecord(
-            id: "\(HomebrewBackend.backendID)|cask|\(token)",
-            backendID: HomebrewBackend.backendID,
-            name: displayName,
-            version: installed,
-            latestVersion: nil,
-            summary: desc,
-            homepage: homepage.flatMap { URL(string: $0) },
-            installedAt: nil,
-            kind: .cask
-        )
+    /// `brew list --versions` output is one line per package, space-separated:
+    ///     git 2.50.0_1
+    ///     python@3.12 3.12.5 3.12.6
+    /// We keep the first (highest-priority) installed version per row.
+    private func parseListVersions(_ raw: String,
+                                   kind: PackageRecord.Kind) -> [PackageRecord] {
+        var out: [PackageRecord] = []
+        for line in raw.split(separator: "\n", omittingEmptySubsequences: true) {
+            let parts = line.split(separator: " ", omittingEmptySubsequences: true)
+            guard let nameToken = parts.first else { continue }
+            let name = String(nameToken)
+            let version = parts.dropFirst().first.map(String.init)
+            let idKind = kind == .formula ? "formula" : "cask"
+            out.append(PackageRecord(
+                id: "\(HomebrewBackend.backendID)|\(idKind)|\(name)",
+                backendID: HomebrewBackend.backendID,
+                name: name,
+                version: version,
+                latestVersion: nil,
+                summary: nil,       // filled in by lazy enrichment, see plan
+                homepage: nil,      // same
+                installedAt: nil,
+                kind: kind
+            ))
+        }
+        return out
     }
 }

@@ -177,6 +177,13 @@ struct ContentView: View {
                         }
                         
                         VStack(alignment: .leading, spacing: 20) {
+                            // Step 2 of the Headless feature: when the user
+                            // selects "Headless" in the sidebar, swap in the new
+                            // viewer. The existing if/else-if chain below has no
+                            // branch for .headless, so nothing else renders here.
+                            if appService.sidebarSelection == .headless {
+                                HeadlessView()
+                            }
                             if appService.sidebarSelection == .openApps {
                                 // 1. Visible Apps
                                 Group {
@@ -975,6 +982,16 @@ struct SidebarView: View {
                                 .padding(.horizontal, 6)
                             : nil)
                 }
+
+                // Headless apps: CLI tools, package-manager installs, services.
+                // Read-only viewer in v1; Pro adds execution in v2 (see headless-plan.md).
+                Label("Headless", systemImage: "terminal")
+                    .tag(SidebarSelection.headless)
+                    .listRowBackground(selection == .headless ?
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(Color.gray.opacity(isSidebarFocused ? 0.4 : 0.2))
+                            .padding(.horizontal, 6)
+                        : nil)
             }
             
             Section("TAGS") {

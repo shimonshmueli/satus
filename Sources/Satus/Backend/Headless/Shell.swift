@@ -51,6 +51,11 @@ enum Shell {
             var env = ProcessInfo.processInfo.environment
             let extraPath = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
             env["PATH"] = env["PATH"].map { "\($0):\(extraPath)" } ?? extraPath
+            // Suppress Homebrew's incidental git-fetch on every invocation —
+            // it can add 10–30s to otherwise fast read-only calls.
+            env["HOMEBREW_NO_AUTO_UPDATE"] = "1"
+            env["HOMEBREW_NO_INSTALL_CLEANUP"] = "1"
+            env["HOMEBREW_NO_ANALYTICS"] = "1"
             process.environment = env
 
             // Guard against double-resume — both the timeout work item and

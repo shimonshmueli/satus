@@ -82,4 +82,5 @@ enum SidebarSelection: Hashable {
     case utilities
     case untagged
     case tag(UUID)
+    case headless   // CLI tools, package-manager installs, LaunchAgents/Daemons.
 }
