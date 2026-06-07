@@ -20,6 +20,11 @@ struct HeadlessView: View {
     @State private var activeBackendID: String = "all"   // "all" or a specific backendID
     @State private var sortMode: SortMode = .name
 
+    // Step 5: when the user picks "View dependencies" on a row, we set this
+    // to the record and a sheet binding to it opens. PackageRecord is
+    // Identifiable so `.sheet(item:)` is the right modifier.
+    @State private var inspectingRecord: PackageRecord? = nil
+
     enum SortMode: String, CaseIterable, Identifiable {
         case name = "Name"
         case backend = "Backend"
@@ -46,6 +51,9 @@ struct HeadlessView: View {
         }
         .padding(.horizontal)
         .task { await loadAll() }
+        .sheet(item: $inspectingRecord) { record in
+            DependencySheet(record: record)
+        }
     }
 
     // MARK: - Header (filter chips + search + sort + refresh)
@@ -157,7 +165,7 @@ struct HeadlessView: View {
                     }
                     .padding(.vertical, 4)
                     ForEach(visible) { record in
-                        RecordRow(record: record)
+                        RecordRow(record: record, onInspect: { inspectingRecord = $0 })
                         Divider().opacity(0.2)
                     }
                 }
@@ -292,6 +300,8 @@ struct HeadlessView: View {
 
 private struct RecordRow: View {
     let record: PackageRecord
+    /// Step 5: parent opens the DependencySheet when the menu item fires.
+    let onInspect: (PackageRecord) -> Void
 
     var body: some View {
         HStack(alignment: .center, spacing: 10) {
@@ -347,6 +357,13 @@ private struct RecordRow: View {
             if let installURL = installPathURL(for: record) {
                 Button("Show in Finder") {
                     NSWorkspace.shared.activateFileViewerSelecting([installURL])
+                }
+            }
+            // Dependencies popover only applies to brew formulae; casks have
+            // no meaningful dep info and we shouldn't waste a shell call on them.
+            if record.backendID == HomebrewBackend.backendID && record.kind == .formula {
+                Button("View dependencies…") {
+                    onInspect(record)
                 }
             }
             Divider()

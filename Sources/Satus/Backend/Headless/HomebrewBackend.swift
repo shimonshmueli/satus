@@ -54,9 +54,32 @@ struct HomebrewBackend: PackageManager {
         return try Self.parseOutdated(output)
     }
 
-    // Dependency stubs — Step 5.
-    func dependencies(of record: PackageRecord) async throws -> [String] { [] }
-    func reverseDependencies(of record: PackageRecord) async throws -> [String] { [] }
+    func dependencies(of record: PackageRecord) async throws -> [String] {
+        guard let brew = brewPath else { return [] }
+        // Cask dependency info isn't meaningful — casks bundle their deps
+        // inside the app. Skip the call.
+        guard record.kind == .formula else { return [] }
+        let output = try await Shell.run(brew, ["deps", record.name], timeout: 15.0)
+        return Self.parseLines(output)
+    }
+
+    func reverseDependencies(of record: PackageRecord) async throws -> [String] {
+        guard let brew = brewPath else { return [] }
+        guard record.kind == .formula else { return [] }
+        // `--installed` restricts the result to formulae the user actually
+        // has — the unrestricted form returns the entire homebrew-core graph.
+        let output = try await Shell.run(brew,
+                                         ["uses", "--installed", record.name],
+                                         timeout: 15.0)
+        return Self.parseLines(output)
+    }
+
+    /// Splits a newline-separated CLI output into trimmed non-empty lines.
+    private static func parseLines(_ raw: String) -> [String] {
+        raw.split(separator: "\n", omittingEmptySubsequences: true)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+    }
 
     // MARK: - Output parsing
 
