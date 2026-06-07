@@ -32,35 +32,49 @@ struct HeadlessView: View {
         var id: String { rawValue }
     }
 
-    // Available backends. Steps 7–10 add pip / cargo / mise / LaunchAgents.
-    private var availableBackends: [(id: String, name: String, symbol: String)] {
-        var out: [(id: String, name: String, symbol: String)] = []
-        if HomebrewBackend().isAvailable {
-            out.append((id: HomebrewBackend.backendID,
+    /// Every backend we know about. We always show all of them in the
+    /// chip row — unavailable ones render disabled with a "0" badge so
+    /// the user can see what ZoneKey *could* surface if they installed
+    /// the relevant CLI. The actual data fetch in loadAll() still skips
+    /// unavailable backends.
+    private struct BackendChip {
+        let id: String
+        let name: String
+        let symbol: String
+        let available: Bool
+    }
+
+    private var allBackends: [BackendChip] {
+        [
+            BackendChip(id: HomebrewBackend.backendID,
                         name: HomebrewBackend.displayName,
-                        symbol: HomebrewBackend.sfSymbol))
-        }
-        if NpmBackend().isAvailable {
-            out.append((id: NpmBackend.backendID,
+                        symbol: HomebrewBackend.sfSymbol,
+                        available: HomebrewBackend().isAvailable),
+            BackendChip(id: NpmBackend.backendID,
                         name: NpmBackend.displayName,
-                        symbol: NpmBackend.sfSymbol))
-        }
-        if PipxBackend().isAvailable {
-            out.append((id: PipxBackend.backendID,
+                        symbol: NpmBackend.sfSymbol,
+                        available: NpmBackend().isAvailable),
+            BackendChip(id: PipxBackend.backendID,
                         name: PipxBackend.displayName,
-                        symbol: PipxBackend.sfSymbol))
-        }
-        if PipBackend().isAvailable {
-            out.append((id: PipBackend.backendID,
+                        symbol: PipxBackend.sfSymbol,
+                        available: PipxBackend().isAvailable),
+            BackendChip(id: PipBackend.backendID,
                         name: PipBackend.displayName,
-                        symbol: PipBackend.sfSymbol))
-        }
-        if CargoBackend().isAvailable {
-            out.append((id: CargoBackend.backendID,
+                        symbol: PipBackend.sfSymbol,
+                        available: PipBackend().isAvailable),
+            BackendChip(id: CargoBackend.backendID,
                         name: CargoBackend.displayName,
-                        symbol: CargoBackend.sfSymbol))
-        }
-        return out
+                        symbol: CargoBackend.sfSymbol,
+                        available: CargoBackend().isAvailable),
+            BackendChip(id: MiseBackend.backendID,
+                        name: MiseBackend.displayName,
+                        symbol: MiseBackend.sfSymbol,
+                        available: MiseBackend().isAvailable),
+            BackendChip(id: AsdfBackend.backendID,
+                        name: AsdfBackend.displayName,
+                        symbol: AsdfBackend.sfSymbol,
+                        available: AsdfBackend().isAvailable),
+        ]
     }
 
     var body: some View {
@@ -82,14 +96,26 @@ struct HeadlessView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
                 let totalOutdated = records.lazy.filter { $0.latestVersion != nil }.count
-                chip(label: "All", symbol: "circle.grid.2x2",
+                chip(label: "All",
+                     symbol: "circle.grid.2x2",
                      badge: totalOutdated > 0 ? "\(totalOutdated)" : nil,
-                     isActive: activeBackendID == "all") { activeBackendID = "all" }
-                ForEach(availableBackends, id: \.id) { be in
+                     isActive: activeBackendID == "all",
+                     isAvailable: true) { activeBackendID = "all" }
+                ForEach(allBackends, id: \.id) { be in
+                    // For installed backends, show outdated count (or no
+                    // badge if zero). For uninstalled ones, always show "0"
+                    // to make the "not installed" state visually obvious.
                     let count = outdatedCount(for: be.id)
-                    chip(label: be.name, symbol: be.symbol,
-                         badge: count > 0 ? "\(count)" : nil,
-                         isActive: activeBackendID == be.id) { activeBackendID = be.id }
+                    let badge: String? = be.available
+                        ? (count > 0 ? "\(count)" : nil)
+                        : "0"
+                    chip(label: be.name,
+                         symbol: be.symbol,
+                         badge: badge,
+                         isActive: activeBackendID == be.id,
+                         isAvailable: be.available) {
+                        if be.available { activeBackendID = be.id }
+                    }
                 }
                 Spacer()
                 Button {
@@ -124,20 +150,24 @@ struct HeadlessView: View {
                       symbol: String,
                       badge: String? = nil,
                       isActive: Bool,
+                      isAvailable: Bool = true,
                       action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 4) {
                 Image(systemName: symbol).font(.caption)
                 Text(label).font(.caption)
                 if let badge = badge {
-                    // Outdated-count pill on the chip — orange to draw the eye
-                    // without screaming red.
+                    // Outdated-count pill on the chip. Orange when there
+                    // are actual outdated packages; gray when the backend
+                    // isn't installed (always "0").
                     Text(badge)
                         .font(.caption2.monospacedDigit().bold())
                         .foregroundColor(.white)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 1)
-                        .background(Capsule().fill(Color.orange))
+                        .background(Capsule().fill(isAvailable
+                                                   ? Color.orange
+                                                   : Color.secondary.opacity(0.5)))
                 }
             }
             .padding(.horizontal, 8)
@@ -147,9 +177,14 @@ struct HeadlessView: View {
             .overlay(Capsule().strokeBorder(isActive ? Color.accentColor
                                                     : Color.secondary.opacity(0.3),
                                             lineWidth: 1))
-            .foregroundColor(isActive ? Color.accentColor : .primary)
+            .foregroundColor(isActive
+                             ? Color.accentColor
+                             : (isAvailable ? .primary : .secondary))
         }
         .buttonStyle(.plain)
+        .opacity(isAvailable ? 1.0 : 0.55)
+        .help(isAvailable ? label : "\(label) is not installed on this machine")
+        .allowsHitTesting(isAvailable)
     }
 
     // MARK: - Content (loading state / error / list)
@@ -241,7 +276,8 @@ struct HeadlessView: View {
         loadError = nil
 
         let backends: [any PackageManager] = [
-            HomebrewBackend(), NpmBackend(), PipxBackend(), PipBackend(), CargoBackend()
+            HomebrewBackend(), NpmBackend(), PipxBackend(), PipBackend(),
+            CargoBackend(), MiseBackend(), AsdfBackend()
         ].filter { $0.isAvailable }
 
         guard !backends.isEmpty else {
@@ -447,6 +483,11 @@ private struct RecordRow: View {
             return URL(string: "https://pypi.org/project/\(record.name)/")
         case CargoBackend.backendID:
             return URL(string: "https://crates.io/crates/\(record.name)")
+        case MiseBackend.backendID, AsdfBackend.backendID:
+            // Runtime rows have shape "<tool>@<version>" — link to the tool
+            // landing page on the manager's site if we recognize it; else nil.
+            let tool = record.name.split(separator: "@").first.map(String.init) ?? record.name
+            return URL(string: "https://mise.jdx.dev/lang/\(tool).html")
         default:
             return record.homepage
         }
@@ -489,8 +530,17 @@ private struct RecordRow: View {
             // cargo's "upgrade" is just install again — it picks the newest
             // available version of the crate.
             return "cargo install \(record.name)"
+        case MiseBackend.backendID:
+            // For mise rows the record.name is "tool@version". Splitting
+            // gives us the tool, which the user usually wants to bump to
+            // latest. We can't auto-pick a version so we punt to `latest`.
+            let tool = record.name.split(separator: "@").first.map(String.init) ?? record.name
+            return "mise use -g \(tool)@latest"
+        case AsdfBackend.backendID:
+            let tool = record.name.split(separator: "@").first.map(String.init) ?? record.name
+            return "asdf install \(tool) latest && asdf global \(tool) latest"
         default:
-            return nil   // Step 9 adds mise / asdf
+            return nil
         }
     }
 
@@ -508,6 +558,15 @@ private struct RecordRow: View {
             return "pip3 uninstall -y \(record.name)"
         case CargoBackend.backendID:
             return "cargo uninstall \(record.name)"
+        case MiseBackend.backendID:
+            // For mise rows: uninstall this specific version. record.name
+            // is already "tool@version" which is what `mise uninstall` wants.
+            return "mise uninstall \(record.name)"
+        case AsdfBackend.backendID:
+            // asdf uninstall takes the form `asdf uninstall <tool> <version>`.
+            let parts = record.name.split(separator: "@", maxSplits: 1)
+            guard parts.count == 2 else { return nil }
+            return "asdf uninstall \(parts[0]) \(parts[1])"
         default:
             return nil
         }
