@@ -334,6 +334,127 @@ private struct RecordRow: View {
         }
         .padding(.vertical, 4)
         .contentShape(Rectangle())
+        .contextMenu {
+            // All actions in Step 4 are read-only ZoneKey-side. We don't
+            // run brew ourselves — either copy the command, open the
+            // homepage, reveal the install path in Finder, or hand the
+            // command off to Terminal. Direct execution lives in v2 (Pro).
+            if let homepage = homepageURL(for: record) {
+                Button("Open homepage") {
+                    NSWorkspace.shared.open(homepage)
+                }
+            }
+            if let installURL = installPathURL(for: record) {
+                Button("Show in Finder") {
+                    NSWorkspace.shared.activateFileViewerSelecting([installURL])
+                }
+            }
+            Divider()
+            if let upgradeCmd = upgradeCommand(for: record) {
+                Button("Copy update command") {
+                    copyToClipboard(upgradeCmd)
+                }
+                Button("Open Terminal and run update") {
+                    runInTerminal(upgradeCmd)
+                }
+            }
+            if let uninstallCmd = uninstallCommand(for: record) {
+                Divider()
+                Button("Copy uninstall command") {
+                    copyToClipboard(uninstallCmd)
+                }
+            }
+        }
+    }
+
+    // MARK: - Context menu helpers
+
+    /// URL of the package's catalog page. We use formulae.brew.sh for brew
+    /// records since it's a reliable, always-present landing page that
+    /// links to the upstream project homepage. Avoids an extra `brew info`
+    /// call just to expose this action in the menu.
+    private func homepageURL(for record: PackageRecord) -> URL? {
+        switch record.backendID {
+        case HomebrewBackend.backendID:
+            let kindSegment = record.kind == .cask ? "cask" : "formula"
+            return URL(string: "https://formulae.brew.sh/\(kindSegment)/\(record.name)")
+        default:
+            return record.homepage
+        }
+    }
+
+    /// On-disk path of the install (Cellar / Caskroom). Falls back to the
+    /// Homebrew root if the deeper directory doesn't exist.
+    private func installPathURL(for record: PackageRecord) -> URL? {
+        switch record.backendID {
+        case HomebrewBackend.backendID:
+            let candidates: [String] = {
+                let dir = record.kind == .cask ? "Caskroom" : "Cellar"
+                return [
+                    "/opt/homebrew/\(dir)/\(record.name)",
+                    "/usr/local/\(dir)/\(record.name)"
+                ]
+            }()
+            for path in candidates where FileManager.default.fileExists(atPath: path) {
+                return URL(fileURLWithPath: path)
+            }
+            return nil
+        default:
+            return record.installedAt
+        }
+    }
+
+    private func upgradeCommand(for record: PackageRecord) -> String? {
+        switch record.backendID {
+        case HomebrewBackend.backendID:
+            return record.kind == .cask
+                ? "brew upgrade --cask \(record.name)"
+                : "brew upgrade \(record.name)"
+        default:
+            return nil   // Step 6+ adds npm / pip / cargo
+        }
+    }
+
+    private func uninstallCommand(for record: PackageRecord) -> String? {
+        switch record.backendID {
+        case HomebrewBackend.backendID:
+            return record.kind == .cask
+                ? "brew uninstall --cask \(record.name)"
+                : "brew uninstall \(record.name)"
+        default:
+            return nil
+        }
+    }
+
+    private func copyToClipboard(_ text: String) {
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(text, forType: .string)
+    }
+
+    /// Hands the command to Terminal.app via AppleScript. `do script` opens
+    /// a new Terminal window and runs the command. We don't try to "type
+    /// without enter" — that path needs Accessibility permission and is
+    /// jankier than just executing in a fresh window the user can see.
+    private func runInTerminal(_ command: String) {
+        // Escape backslashes and double-quotes for the AppleScript string
+        // literal; backslash first so the second pass doesn't double-escape.
+        let escaped = command
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        let script = """
+        tell application "Terminal"
+            activate
+            do script "\(escaped)"
+        end tell
+        """
+        if let appleScript = NSAppleScript(source: script) {
+            var err: NSDictionary?
+            appleScript.executeAndReturnError(&err)
+            // If err is non-nil it usually means user denied Automation
+            // permission for Terminal. Silently fail — the macOS prompt
+            // already told them what to do.
+        }
     }
 
     private func symbolForKind(_ kind: PackageRecord.Kind) -> String {
