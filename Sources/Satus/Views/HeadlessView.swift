@@ -55,6 +55,11 @@ struct HeadlessView: View {
                         name: PipBackend.displayName,
                         symbol: PipBackend.sfSymbol))
         }
+        if CargoBackend().isAvailable {
+            out.append((id: CargoBackend.backendID,
+                        name: CargoBackend.displayName,
+                        symbol: CargoBackend.sfSymbol))
+        }
         return out
     }
 
@@ -236,7 +241,7 @@ struct HeadlessView: View {
         loadError = nil
 
         let backends: [any PackageManager] = [
-            HomebrewBackend(), NpmBackend(), PipxBackend(), PipBackend()
+            HomebrewBackend(), NpmBackend(), PipxBackend(), PipBackend(), CargoBackend()
         ].filter { $0.isAvailable }
 
         guard !backends.isEmpty else {
@@ -440,6 +445,8 @@ private struct RecordRow: View {
             return URL(string: "https://www.npmjs.com/package/\(record.name)")
         case PipBackend.backendID, PipxBackend.backendID:
             return URL(string: "https://pypi.org/project/\(record.name)/")
+        case CargoBackend.backendID:
+            return URL(string: "https://crates.io/crates/\(record.name)")
         default:
             return record.homepage
         }
@@ -478,8 +485,12 @@ private struct RecordRow: View {
             return "pipx upgrade \(record.name)"
         case PipBackend.backendID:
             return "pip3 install --upgrade \(record.name)"
+        case CargoBackend.backendID:
+            // cargo's "upgrade" is just install again — it picks the newest
+            // available version of the crate.
+            return "cargo install \(record.name)"
         default:
-            return nil   // Steps 8–9 add cargo / mise
+            return nil   // Step 9 adds mise / asdf
         }
     }
 
@@ -495,6 +506,8 @@ private struct RecordRow: View {
             return "pipx uninstall \(record.name)"
         case PipBackend.backendID:
             return "pip3 uninstall -y \(record.name)"
+        case CargoBackend.backendID:
+            return "cargo uninstall \(record.name)"
         default:
             return nil
         }
