@@ -32,13 +32,18 @@ struct HeadlessView: View {
         var id: String { rawValue }
     }
 
-    // Available backends. Step 6–9 add npm / pip / cargo / mise here.
+    // Available backends. Steps 7–10 add pip / cargo / mise / LaunchAgents.
     private var availableBackends: [(id: String, name: String, symbol: String)] {
         var out: [(id: String, name: String, symbol: String)] = []
         if HomebrewBackend().isAvailable {
             out.append((id: HomebrewBackend.backendID,
                         name: HomebrewBackend.displayName,
                         symbol: HomebrewBackend.sfSymbol))
+        }
+        if NpmBackend().isAvailable {
+            out.append((id: NpmBackend.backendID,
+                        name: NpmBackend.displayName,
+                        symbol: NpmBackend.sfSymbol))
         }
         return out
     }
@@ -209,7 +214,8 @@ struct HeadlessView: View {
 
     // MARK: - Loading
 
-    /// Progressive load. Three paths:
+    /// Progressive load across all available backends.
+    /// Per backend, three paths:
     ///   1. Cache hit (within TTL): show cached records, done.
     ///   2. Cache miss, fast list first: show `list()` records immediately
     ///      (sub-second), then fire `outdated()` in the background and
@@ -219,45 +225,70 @@ struct HeadlessView: View {
         isLoading = true
         loadError = nil
 
-        let brew = HomebrewBackend()
-        guard brew.isAvailable else {
+        let backends: [any PackageManager] = [
+            HomebrewBackend(), NpmBackend()
+        ].filter { $0.isAvailable }
+
+        guard !backends.isEmpty else {
             isLoading = false
             return
         }
 
-        if forceRefresh {
-            HeadlessCache.invalidate(backendID: HomebrewBackend.backendID)
+        // Start with whatever's cached so the first paint is instant for
+        // backends that have a fresh entry.
+        var firstPass: [PackageRecord] = []
+        var needsFetch: [any PackageManager] = []
+        for backend in backends {
+            let id = type(of: backend).backendID
+            if forceRefresh {
+                HeadlessCache.invalidate(backendID: id)
+            }
+            if let cached = HeadlessCache.load(backendID: id) {
+                firstPass.append(contentsOf: cached.records)
+            } else {
+                needsFetch.append(backend)
+            }
         }
+        records = firstPass
 
-        // Path 1: cache hit.
-        if let cached = HeadlessCache.load(backendID: HomebrewBackend.backendID) {
-            records = cached.records
+        guard !needsFetch.isEmpty else {
             isLoading = false
             return
         }
 
-        // Path 2/3: show fast list first, enrich with outdated after.
+        // For backends that need fetching: fast list first, then enrich.
         do {
-            let fast = try await brew.list()
-            records = fast                 // first paint — no badges yet
-            isLoading = false              // spinner goes away here
+            var listed: [String: [PackageRecord]] = [:]   // backendID -> records
+            for backend in needsFetch {
+                let id = type(of: backend).backendID
+                let fast = try await backend.list()
+                listed[id] = fast
+                records.append(contentsOf: fast)
+            }
+            isLoading = false   // spinner clears as soon as the fast lists are in
 
-            // Run outdated() in the background. Don't block the UI.
-            // If it throws or times out we keep the badge-less list visible.
-            Task {
-                do {
-                    let outdated = try await brew.outdated()
-                    let merged = Self.merge(list: fast, outdated: outdated)
-                    await MainActor.run { records = merged }
-                    HeadlessCache.save(backendID: HomebrewBackend.backendID,
-                                       records: merged)
-                } catch {
-                    // Persist what we have so a cache hit on next launch
-                    // still skips the slow call; user can hit Refresh later.
-                    HeadlessCache.save(backendID: HomebrewBackend.backendID,
-                                       records: fast)
-                    await MainActor.run {
-                        loadError = "Outdated check failed: \(error.localizedDescription)"
+            // Run outdated() per backend in the background, independently.
+            // A slow brew doesn't block npm and vice versa.
+            for backend in needsFetch {
+                let id = type(of: backend).backendID
+                let fast = listed[id] ?? []
+                Task {
+                    do {
+                        let outdated = try await backend.outdated()
+                        let merged = Self.merge(list: fast, outdated: outdated)
+                        await MainActor.run {
+                            // Replace just this backend's slice of the records.
+                            records.removeAll { $0.backendID == id }
+                            records.append(contentsOf: merged)
+                        }
+                        HeadlessCache.save(backendID: id, records: merged)
+                    } catch {
+                        // Cache the fast list so next launch isn't slow,
+                        // and surface a non-fatal note for the user.
+                        HeadlessCache.save(backendID: id, records: fast)
+                        await MainActor.run {
+                            loadError = "\(id) outdated check failed: \(error.localizedDescription)"
+                        }
                     }
                 }
             }
@@ -395,6 +426,8 @@ private struct RecordRow: View {
         case HomebrewBackend.backendID:
             let kindSegment = record.kind == .cask ? "cask" : "formula"
             return URL(string: "https://formulae.brew.sh/\(kindSegment)/\(record.name)")
+        case NpmBackend.backendID:
+            return URL(string: "https://www.npmjs.com/package/\(record.name)")
         default:
             return record.homepage
         }
@@ -427,8 +460,10 @@ private struct RecordRow: View {
             return record.kind == .cask
                 ? "brew upgrade --cask \(record.name)"
                 : "brew upgrade \(record.name)"
+        case NpmBackend.backendID:
+            return "npm update -g \(record.name)"
         default:
-            return nil   // Step 6+ adds npm / pip / cargo
+            return nil   // Steps 7–9 add pip / cargo / mise
         }
     }
 
@@ -438,6 +473,8 @@ private struct RecordRow: View {
             return record.kind == .cask
                 ? "brew uninstall --cask \(record.name)"
                 : "brew uninstall \(record.name)"
+        case NpmBackend.backendID:
+            return "npm uninstall -g \(record.name)"
         default:
             return nil
         }
