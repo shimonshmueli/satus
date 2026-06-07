@@ -45,6 +45,16 @@ struct HeadlessView: View {
                         name: NpmBackend.displayName,
                         symbol: NpmBackend.sfSymbol))
         }
+        if PipxBackend().isAvailable {
+            out.append((id: PipxBackend.backendID,
+                        name: PipxBackend.displayName,
+                        symbol: PipxBackend.sfSymbol))
+        }
+        if PipBackend().isAvailable {
+            out.append((id: PipBackend.backendID,
+                        name: PipBackend.displayName,
+                        symbol: PipBackend.sfSymbol))
+        }
         return out
     }
 
@@ -226,7 +236,7 @@ struct HeadlessView: View {
         loadError = nil
 
         let backends: [any PackageManager] = [
-            HomebrewBackend(), NpmBackend()
+            HomebrewBackend(), NpmBackend(), PipxBackend(), PipBackend()
         ].filter { $0.isAvailable }
 
         guard !backends.isEmpty else {
@@ -428,6 +438,8 @@ private struct RecordRow: View {
             return URL(string: "https://formulae.brew.sh/\(kindSegment)/\(record.name)")
         case NpmBackend.backendID:
             return URL(string: "https://www.npmjs.com/package/\(record.name)")
+        case PipBackend.backendID, PipxBackend.backendID:
+            return URL(string: "https://pypi.org/project/\(record.name)/")
         default:
             return record.homepage
         }
@@ -462,8 +474,12 @@ private struct RecordRow: View {
                 : "brew upgrade \(record.name)"
         case NpmBackend.backendID:
             return "npm update -g \(record.name)"
+        case PipxBackend.backendID:
+            return "pipx upgrade \(record.name)"
+        case PipBackend.backendID:
+            return "pip3 install --upgrade \(record.name)"
         default:
-            return nil   // Steps 7–9 add pip / cargo / mise
+            return nil   // Steps 8–9 add cargo / mise
         }
     }
 
@@ -475,6 +491,10 @@ private struct RecordRow: View {
                 : "brew uninstall \(record.name)"
         case NpmBackend.backendID:
             return "npm uninstall -g \(record.name)"
+        case PipxBackend.backendID:
+            return "pipx uninstall \(record.name)"
+        case PipBackend.backendID:
+            return "pip3 uninstall -y \(record.name)"
         default:
             return nil
         }
