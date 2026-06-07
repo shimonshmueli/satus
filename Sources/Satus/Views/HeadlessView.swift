@@ -74,6 +74,10 @@ struct HeadlessView: View {
                         name: AsdfBackend.displayName,
                         symbol: AsdfBackend.sfSymbol,
                         available: AsdfBackend().isAvailable),
+            BackendChip(id: LaunchServicesBackend.backendID,
+                        name: LaunchServicesBackend.displayName,
+                        symbol: LaunchServicesBackend.sfSymbol,
+                        available: LaunchServicesBackend().isAvailable),
         ]
     }
 
@@ -101,7 +105,20 @@ struct HeadlessView: View {
                      badge: totalOutdated > 0 ? "\(totalOutdated)" : nil,
                      isActive: activeBackendID == "all",
                      isAvailable: true) { activeBackendID = "all" }
-                ForEach(allBackends, id: \.id) { be in
+                // Chips ordered by total record count (descending), so the
+                // backends with the most installed packages live closest to
+                // the All chip. Unavailable backends fall to the end since
+                // their count is zero.
+                let orderedBackends = allBackends.sorted { lhs, rhs in
+                    let lc = recordCount(for: lhs.id)
+                    let rc = recordCount(for: rhs.id)
+                    if lc != rc { return lc > rc }
+                    // Tie-break alphabetically for stable order in the
+                    // zero-record case (mostly relevant pre-load).
+                    return lhs.name.localizedCaseInsensitiveCompare(rhs.name)
+                        == .orderedAscending
+                }
+                ForEach(orderedBackends, id: \.id) { be in
                     // For installed backends, show outdated count (or no
                     // badge if zero). For uninstalled ones, always show "0"
                     // to make the "not installed" state visually obvious.
@@ -277,7 +294,7 @@ struct HeadlessView: View {
 
         let backends: [any PackageManager] = [
             HomebrewBackend(), NpmBackend(), PipxBackend(), PipBackend(),
-            CargoBackend(), MiseBackend(), AsdfBackend()
+            CargoBackend(), MiseBackend(), AsdfBackend(), LaunchServicesBackend()
         ].filter { $0.isAvailable }
 
         guard !backends.isEmpty else {
@@ -376,6 +393,12 @@ struct HeadlessView: View {
             .filter { $0.backendID == backendID && $0.latestVersion != nil }
             .count
     }
+
+    /// Total record count for a backend — drives the chip sort order so
+    /// backends with the most installed items sit closest to the All chip.
+    fileprivate func recordCount(for backendID: String) -> Int {
+        records.lazy.filter { $0.backendID == backendID }.count
+    }
 }
 
 // MARK: - Row
@@ -449,21 +472,33 @@ private struct RecordRow: View {
                 }
             }
             Divider()
+            let upgradeLabel = upgradeMenuLabel(for: record)
+            let uninstallLabel = uninstallMenuLabel(for: record)
             if let upgradeCmd = upgradeCommand(for: record) {
-                Button("Copy update command") {
+                Button("Copy \(upgradeLabel) command") {
                     copyToClipboard(upgradeCmd)
                 }
-                Button("Open Terminal and run update") {
+                Button("Open Terminal and run \(upgradeLabel)") {
                     runInTerminal(upgradeCmd)
                 }
             }
             if let uninstallCmd = uninstallCommand(for: record) {
                 Divider()
-                Button("Copy uninstall command") {
+                Button("Copy \(uninstallLabel) command") {
                     copyToClipboard(uninstallCmd)
                 }
             }
         }
+    }
+
+    /// "update" for package-manager backends, "load" for LaunchServices.
+    /// Used by the context menu so the verbs match the action.
+    private func upgradeMenuLabel(for record: PackageRecord) -> String {
+        record.backendID == LaunchServicesBackend.backendID ? "load" : "update"
+    }
+
+    private func uninstallMenuLabel(for record: PackageRecord) -> String {
+        record.backendID == LaunchServicesBackend.backendID ? "unload" : "uninstall"
     }
 
     // MARK: - Context menu helpers
@@ -539,6 +574,10 @@ private struct RecordRow: View {
         case AsdfBackend.backendID:
             let tool = record.name.split(separator: "@").first.map(String.init) ?? record.name
             return "asdf install \(tool) latest && asdf global \(tool) latest"
+        case LaunchServicesBackend.backendID:
+            // For Launch services "upgrade" maps to "load" — start the service.
+            guard let plistPath = record.installedAt?.path else { return nil }
+            return "launchctl load \"\(plistPath)\""
         default:
             return nil
         }
@@ -567,6 +606,10 @@ private struct RecordRow: View {
             let parts = record.name.split(separator: "@", maxSplits: 1)
             guard parts.count == 2 else { return nil }
             return "asdf uninstall \(parts[0]) \(parts[1])"
+        case LaunchServicesBackend.backendID:
+            // "uninstall" → "unload" — stop the service without removing the plist.
+            guard let plistPath = record.installedAt?.path else { return nil }
+            return "launchctl unload \"\(plistPath)\""
         default:
             return nil
         }
