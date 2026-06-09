@@ -177,6 +177,13 @@ struct ContentView: View {
                         }
                         
                         VStack(alignment: .leading, spacing: 20) {
+                            // Step 2 of the Headless feature: when the user
+                            // selects "Headless" in the sidebar, swap in the new
+                            // viewer. The existing if/else-if chain below has no
+                            // branch for .headless, so nothing else renders here.
+                            if appService.sidebarSelection == .headless {
+                                HeadlessView()
+                            }
                             if appService.sidebarSelection == .openApps {
                                 // 1. Visible Apps
                                 Group {
@@ -575,13 +582,18 @@ struct ContentView: View {
         }
     }
     .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
-        // print("DEBUG: Resigning Active") // Monitor if this fires during shortcut
+        // If pinned (or Settings is open), we're staying visible — don't
+        // touch the user's context. They want their sidebar selection,
+        // search text, and Settings sheet preserved when they bounce to
+        // another app and back.
+        if appService.isPinned || appService.isSettingsOpen { return }
+
         showSettings = false
         appService.searchText = "" // Clear search when hidden
-        
+
         // Reset to All Apps on hide to avoid visual jump on next appear
         appService.sidebarSelection = .allApps
-        
+
         // Reset focus states
         isSidebarFocused = false
         searchFocusedState = false
@@ -970,6 +982,18 @@ struct SidebarView: View {
                     Label("Utilities", systemImage: "wrench.and.screwdriver")
                         .tag(SidebarSelection.utilities)
                         .listRowBackground(selection == .utilities ?
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(Color.gray.opacity(isSidebarFocused ? 0.4 : 0.2))
+                                .padding(.horizontal, 6)
+                            : nil)
+                }
+
+                // Headless apps: CLI tools, package-manager installs, services.
+                // Read-only viewer in v1; Pro adds execution in v2 (see headless-plan.md).
+                if appService.showHeadless {
+                    Label("Headless", systemImage: "terminal")
+                        .tag(SidebarSelection.headless)
+                        .listRowBackground(selection == .headless ?
                             RoundedRectangle(cornerRadius: 6)
                                 .fill(Color.gray.opacity(isSidebarFocused ? 0.4 : 0.2))
                                 .padding(.horizontal, 6)

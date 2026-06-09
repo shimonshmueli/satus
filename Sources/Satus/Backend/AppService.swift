@@ -58,6 +58,9 @@ class AppService: ObservableObject {
     @Published var showUtilities: Bool = true {
         didSet { savePreferences() }
     }
+    @Published var showHeadless: Bool = true {
+        didSet { savePreferences() }
+    }
     @Published var showTagCount: Bool = true {
         didSet { savePreferences() }
     }
@@ -717,7 +720,7 @@ class AppService: ObservableObject {
         
         let tagSettings = tags.map { AppTagDTO(id: $0.id, name: $0.name, colorHex: $0.colorHex, items: $0.items, usageCount: $0.usageCount) }
         
-        return UserPreferences(tags: tagSettings, appSettings: appSettings, iconScale: iconScale, appTheme: appTheme, viewMode: viewMode, shortcutMapping: shortcutTagMapping, showOpenApps: showOpenApps, showUtilities: showUtilities, showTagCount: showTagCount, hiddenAppBundleIDs: Array(hiddenAppBundleIDs), sortTagsAlphabetically: nil, tagSortMode: tagSortMode, isDebugMode: isDebugMode, defaultTagId: defaultTagId, appKeywords: appKeywords, lastKeywordFetchDate: lastKeywordFetchDate, accentColorHex: accentColorHex)
+        return UserPreferences(tags: tagSettings, appSettings: appSettings, iconScale: iconScale, appTheme: appTheme, viewMode: viewMode, shortcutMapping: shortcutTagMapping, showOpenApps: showOpenApps, showUtilities: showUtilities, showHeadless: showHeadless, showTagCount: showTagCount, hiddenAppBundleIDs: Array(hiddenAppBundleIDs), sortTagsAlphabetically: nil, tagSortMode: tagSortMode, isDebugMode: isDebugMode, defaultTagId: defaultTagId, appKeywords: appKeywords, lastKeywordFetchDate: lastKeywordFetchDate, accentColorHex: accentColorHex)
     }
 
     func restorePreferences(_ prefs: UserPreferences) {
@@ -728,6 +731,7 @@ class AppService: ObservableObject {
         if let mapping = prefs.shortcutMapping { self.shortcutTagMapping = mapping }
         if let showOpen = prefs.showOpenApps { self.showOpenApps = showOpen }
         if let showUtils = prefs.showUtilities { self.showUtilities = showUtils }
+        if let showHl = prefs.showHeadless { self.showHeadless = showHl }
         if let hiddenIDs = prefs.hiddenAppBundleIDs { self.hiddenAppBundleIDs = Set(hiddenIDs) }
         if let mode = prefs.tagSortMode {
             self.tagSortMode = mode
@@ -872,6 +876,11 @@ class AppService: ObservableObject {
             if let tag = tags.first(where: { $0.id == tagId }) {
                 return getItemsForTag(tag)
             }
+            return []
+        case .headless:
+            // Headless view supplies its own data via HeadlessView's task,
+            // not via the AppItem list. Return empty so callers that walk
+            // this list (search filters, grid renderers) see nothing.
             return []
         }
     }
@@ -1032,6 +1041,7 @@ class AppService: ObservableObject {
         
         let showOpenApps: Bool?
         let showUtilities: Bool?
+        let showHeadless: Bool?
         let showTagCount: Bool?
         let hiddenAppBundleIDs: [String]?
         let sortTagsAlphabetically: Bool?
@@ -1163,6 +1173,7 @@ class AppService: ObservableObject {
         
         if let showOpen = prefs.showOpenApps { self.showOpenApps = showOpen }
         if let showUtils = prefs.showUtilities { self.showUtilities = showUtils }
+        if let showHl = prefs.showHeadless { self.showHeadless = showHl }
         if let showCount = prefs.showTagCount { self.showTagCount = showCount }
         if let hiddenIDs = prefs.hiddenAppBundleIDs {
             var loadedIDs = Set(hiddenIDs)

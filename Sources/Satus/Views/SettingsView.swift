@@ -25,6 +25,7 @@ struct SettingsView: View {
                         .foregroundColor(.secondary)
                 }
                 .buttonStyle(.plain)
+                .focusable(false)        // suppress the blue focus ring
                 .help("Discard Changes")
                 
                 Spacer()
@@ -61,6 +62,7 @@ struct SettingsView: View {
                     Toggle("Launch at Login", isOn: $appService.launchAtLogin)
                     Toggle("Show Open Applications", isOn: $appService.showOpenApps)
                     Toggle("Show Utilities", isOn: $appService.showUtilities)
+                    Toggle("Show Headless", isOn: $appService.showHeadless)
                     Toggle("Show Tag Application Count", isOn: $appService.showTagCount)
                     Picker("Sort Tags", selection: $appService.tagSortMode) {
                         Text("Manual").tag(TagSortMode.manual)
