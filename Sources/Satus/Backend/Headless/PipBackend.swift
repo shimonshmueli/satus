@@ -11,7 +11,7 @@ struct PipBackend: PackageManager {
 
     static let backendID   = "pip"
     static let displayName = "pip"
-    static let sfSymbol    = "shippingbox"
+    static let sfSymbol    = "tortoise.fill"
 
     private let pipPath: String?
 

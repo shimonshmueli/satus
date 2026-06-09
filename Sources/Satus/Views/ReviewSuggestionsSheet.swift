@@ -61,6 +61,7 @@ struct ReviewSuggestionsSheet: View {
                     .foregroundColor(.secondary)
             }
             .buttonStyle(.plain)
+            .focusable(false)        // suppress the blue focus ring
             .help("Cancel without applying")
         }
         .padding()

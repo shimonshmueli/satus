@@ -12,9 +12,10 @@ import AppKit
 /// Copy update command, Open Terminal pre-typed) come in Step 4.
 struct HeadlessView: View {
 
-    @State private var records: [PackageRecord] = []
-    @State private var isLoading: Bool = false
-    @State private var loadError: String? = nil
+    /// Data and load state live in a singleton so switching the sidebar
+    /// away from Headless and back doesn't blow them away. The view itself
+    /// is rebuilt on every selection change; the store survives.
+    @ObservedObject private var store = HeadlessStore.shared
 
     @State private var searchText: String = ""
     @State private var activeBackendID: String = "all"   // "all" or a specific backendID
@@ -24,6 +25,16 @@ struct HeadlessView: View {
     // to the record and a sheet binding to it opens. PackageRecord is
     // Identifiable so `.sheet(item:)` is the right modifier.
     @State private var inspectingRecord: PackageRecord? = nil
+
+    // Convenience accessors so the existing chip / row / loader code keeps
+    // reading `records`, `isLoading`, `loadError`, `actionStatus` directly.
+    private var records: [PackageRecord] { store.records }
+    private var isLoading: Bool { store.isLoading }
+    private var loadError: String? { store.loadError }
+    private var actionStatus: String? {
+        get { store.actionStatus }
+    }
+    private func setActionStatus(_ value: String?) { store.actionStatus = value }
 
     enum SortMode: String, CaseIterable, Identifiable {
         case name = "Name"
@@ -88,7 +99,7 @@ struct HeadlessView: View {
             content
         }
         .padding(.horizontal)
-        .task { await loadAll() }
+        .task { await store.loadIfNeeded() }
         .sheet(item: $inspectingRecord) { record in
             DependencySheet(record: record)
         }
@@ -135,10 +146,28 @@ struct HeadlessView: View {
                     }
                 }
                 Spacer()
+                if let cmd = updateAllCommand(for: activeBackendID) {
+                    // Just copy the command to the clipboard. The user pastes
+                    // and runs it in Terminal themselves. We don't attempt
+                    // to drive Terminal via AppleScript anymore — that path
+                    // failed silently when Automation permission wasn't
+                    // granted, and the clipboard handoff is unambiguous.
+                    Button {
+                        let pb = NSPasteboard.general
+                        pb.clearContents()
+                        pb.setString(cmd, forType: .string)
+                        setActionStatus("Copied to clipboard. Paste it in Terminal and press Return to run.")
+                    } label: {
+                        Text(updateAllLabel(for: activeBackendID))
+                            .font(.caption)
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Will copy to clipboard:\n\(cmd)")
+                }
                 Button {
                     // Explicit user-driven refresh — bypass the disk cache
                     // and re-run `brew list` + `brew outdated` now.
-                    Task { await loadAll(forceRefresh: true) }
+                    Task { await store.loadAll(forceRefresh: true) }
                 } label: {
                     Image(systemName: "arrow.clockwise")
                 }
@@ -157,6 +186,28 @@ struct HeadlessView: View {
                 .pickerStyle(.menu)
                 .labelsHidden()
                 .frame(width: 150)
+            }
+
+            // Confirmation toast after the Copy-command button fires.
+            // Dismissible with the x.
+            if let status = actionStatus {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "doc.on.clipboard")
+                        .foregroundColor(.accentColor)
+                        .font(.caption)
+                    Text(status)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .textSelection(.enabled)
+                    Spacer()
+                    Button {
+                        setActionStatus(nil)
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.caption2)
+                    }
+                    .buttonStyle(.borderless)
+                }
             }
         }
         .padding(.vertical, 8)
@@ -221,7 +272,7 @@ struct HeadlessView: View {
                 Text("Failed to load: \(err)")
                     .font(.caption)
                     .foregroundColor(.red)
-                Button("Retry") { Task { await loadAll() } }
+                Button("Retry") { Task { await store.loadAll() } }
                     .buttonStyle(.bordered)
             }
             .padding(.top, 20)
@@ -281,112 +332,6 @@ struct HeadlessView: View {
 
     // MARK: - Loading
 
-    /// Progressive load across all available backends.
-    /// Per backend, three paths:
-    ///   1. Cache hit (within TTL): show cached records, done.
-    ///   2. Cache miss, fast list first: show `list()` records immediately
-    ///      (sub-second), then fire `outdated()` in the background and
-    ///      merge its badges into the visible list when it returns.
-    ///   3. Force refresh: invalidate cache, run the same fast-then-slow flow.
-    private func loadAll(forceRefresh: Bool = false) async {
-        isLoading = true
-        loadError = nil
-
-        let backends: [any PackageManager] = [
-            HomebrewBackend(), NpmBackend(), PipxBackend(), PipBackend(),
-            CargoBackend(), MiseBackend(), AsdfBackend(), LaunchServicesBackend()
-        ].filter { $0.isAvailable }
-
-        guard !backends.isEmpty else {
-            isLoading = false
-            return
-        }
-
-        // Start with whatever's cached so the first paint is instant for
-        // backends that have a fresh entry.
-        var firstPass: [PackageRecord] = []
-        var needsFetch: [any PackageManager] = []
-        for backend in backends {
-            let id = type(of: backend).backendID
-            if forceRefresh {
-                HeadlessCache.invalidate(backendID: id)
-            }
-            if let cached = HeadlessCache.load(backendID: id) {
-                firstPass.append(contentsOf: cached.records)
-            } else {
-                needsFetch.append(backend)
-            }
-        }
-        records = firstPass
-
-        guard !needsFetch.isEmpty else {
-            isLoading = false
-            return
-        }
-
-        // For backends that need fetching: fast list first, then enrich.
-        do {
-            var listed: [String: [PackageRecord]] = [:]   // backendID -> records
-            for backend in needsFetch {
-                let id = type(of: backend).backendID
-                let fast = try await backend.list()
-                listed[id] = fast
-                records.append(contentsOf: fast)
-            }
-            isLoading = false   // spinner clears as soon as the fast lists are in
-
-            // Run outdated() per backend in the background, independently.
-            // A slow brew doesn't block npm and vice versa.
-            for backend in needsFetch {
-                let id = type(of: backend).backendID
-                let fast = listed[id] ?? []
-                Task {
-                    do {
-                        let outdated = try await backend.outdated()
-                        let merged = Self.merge(list: fast, outdated: outdated)
-                        await MainActor.run {
-                            // Replace just this backend's slice of the records.
-                            records.removeAll { $0.backendID == id }
-                            records.append(contentsOf: merged)
-                        }
-                        HeadlessCache.save(backendID: id, records: merged)
-                    } catch {
-                        // Cache the fast list so next launch isn't slow,
-                        // and surface a non-fatal note for the user.
-                        HeadlessCache.save(backendID: id, records: fast)
-                        await MainActor.run {
-                            loadError = "\(id) outdated check failed: \(error.localizedDescription)"
-                        }
-                    }
-                }
-            }
-        } catch {
-            isLoading = false
-            loadError = error.localizedDescription
-        }
-    }
-
-    /// Merges `outdated` (carries `latestVersion`) onto `list` by `id`.
-    /// Anything in `list` that doesn't appear outdated keeps `latestVersion == nil`.
-    private static func merge(list: [PackageRecord],
-                              outdated: [PackageRecord]) -> [PackageRecord] {
-        let outdatedByID = Dictionary(uniqueKeysWithValues: outdated.map { ($0.id, $0) })
-        return list.map { row in
-            guard let o = outdatedByID[row.id] else { return row }
-            return PackageRecord(
-                id: row.id,
-                backendID: row.backendID,
-                name: row.name,
-                version: row.version ?? o.version,
-                latestVersion: o.latestVersion,
-                summary: row.summary,
-                homepage: row.homepage,
-                installedAt: row.installedAt,
-                kind: row.kind
-            )
-        }
-    }
-
     /// Count of outdated records for a given backend (used by the chip badge).
     fileprivate func outdatedCount(for backendID: String) -> Int {
         records.lazy
@@ -399,6 +344,91 @@ struct HeadlessView: View {
     fileprivate func recordCount(for backendID: String) -> Int {
         records.lazy.filter { $0.backendID == backendID }.count
     }
+
+    /// Per-backend bulk update command. Returns nil when there's nothing
+    /// to update or no clean bulk path. Single source of truth so the
+    /// per-chip button and the "all" chain stay consistent.
+    private func bulkCommand(for backendID: String) -> String? {
+        switch backendID {
+        case HomebrewBackend.backendID:
+            // `brew upgrade` (no args) upgrades all outdated. Reliable.
+            return outdatedCount(for: backendID) > 0 ? "brew upgrade" : nil
+
+        case NpmBackend.backendID:
+            // `npm update -g` is flaky on modern npm — it sometimes stops
+            // after the first package. Build an explicit list of outdated
+            // packages and reinstall each at latest, which is deterministic.
+            let outdated = records.filter {
+                $0.backendID == NpmBackend.backendID && $0.latestVersion != nil
+            }
+            guard !outdated.isEmpty else { return nil }
+            let args = outdated.map { "\($0.name)@latest" }.joined(separator: " ")
+            return "npm install -g \(args)"
+
+        case PipxBackend.backendID:
+            // pipx has no outdated check — surface the bulk command
+            // whenever anything is installed.
+            return recordCount(for: backendID) > 0 ? "pipx upgrade-all" : nil
+
+        case MiseBackend.backendID:
+            return recordCount(for: backendID) > 0 ? "mise upgrade" : nil
+
+        case PipBackend.backendID:
+            // pip has no single bulk-upgrade command and `--format=freeze`
+            // is incompatible with `--outdated`. Recipe: outdated list as
+            // JSON, pipe through python to print each name, then
+            // `xargs -n1 pip3 install -U`. The flags matter:
+            //   --disable-pip-version-check: stops Apple's pip 21.x from
+            //     appending an upgrade warning to STDOUT and breaking JSON
+            //   2>/dev/null: hides any other deprecation chatter
+            return outdatedCount(for: backendID) > 0
+                ? "pip3 list --outdated --format=json --disable-pip-version-check 2>/dev/null | python3 -c \"import json,sys; [print(p['name']) for p in json.load(sys.stdin)]\" | xargs -n1 pip3 install -U"
+                : nil
+
+        default:
+            // cargo (without cargo-update plugin) / asdf / Launch don't have
+            // a clean bulk path.
+            return nil
+        }
+    }
+
+    /// Builds the "update everything for this chip" command. For the "all"
+    /// scope we chain available backends with `&&` in dependency order:
+    /// brew first (it usually owns the others' binaries), then npm/pipx/mise.
+    fileprivate func updateAllCommand(for backendID: String) -> String? {
+        if backendID == "all" {
+            // Order matters: brew first (it usually owns the others'
+            // binaries), then npm/pipx/pip/mise. Pip's pipeline goes last
+            // because its xargs loop is the slowest of the bunch.
+            let order = [
+                HomebrewBackend.backendID,
+                NpmBackend.backendID,
+                PipxBackend.backendID,
+                MiseBackend.backendID,
+                PipBackend.backendID
+            ]
+            let parts = order.compactMap { bulkCommand(for: $0) }
+            return parts.isEmpty ? nil : parts.joined(separator: " && ")
+        }
+        return bulkCommand(for: backendID)
+    }
+
+    /// Button label. Reads as "Copy update command (N)" so the user knows
+    /// they'll get the command on their clipboard, not an executed action.
+    fileprivate func updateAllLabel(for backendID: String) -> String {
+        if backendID == "all" {
+            let count = records.lazy.filter { $0.latestVersion != nil }.count
+            return count > 0 ? "Copy update command (\(count))" : "Copy update command"
+        }
+        switch backendID {
+        case HomebrewBackend.backendID, NpmBackend.backendID, PipBackend.backendID:
+            let count = outdatedCount(for: backendID)
+            return count > 0 ? "Copy update command (\(count))" : "Copy update command"
+        default:
+            // pipx / mise don't have outdated counts; just the label.
+            return "Copy update command"
+        }
+    }
 }
 
 // MARK: - Row
@@ -407,6 +437,10 @@ private struct RecordRow: View {
     let record: PackageRecord
     /// Step 5: parent opens the DependencySheet when the menu item fires.
     let onInspect: (PackageRecord) -> Void
+
+    /// Tracked locally so each row independently knows when the cursor
+    /// is over it. Drives a subtle background tint for affordance.
+    @State private var isHovering: Bool = false
 
     var body: some View {
         HStack(alignment: .center, spacing: 10) {
@@ -448,7 +482,19 @@ private struct RecordRow: View {
                 .background(Capsule().fill(Color.secondary.opacity(0.12)))
         }
         .padding(.vertical, 4)
+        .padding(.horizontal, 6)
+        .background(
+            // Subtle row highlight on hover. RoundedRectangle keeps the
+            // tint from running into the dividers above and below.
+            RoundedRectangle(cornerRadius: 4)
+                .fill(isHovering
+                      ? Color.secondary.opacity(0.12)
+                      : Color.clear)
+        )
         .contentShape(Rectangle())
+        .onHover { hovering in
+            isHovering = hovering
+        }
         .contextMenu {
             // All actions in Step 4 are read-only ZoneKey-side. We don't
             // run brew ourselves — either copy the command, open the
@@ -621,29 +667,8 @@ private struct RecordRow: View {
         pb.setString(text, forType: .string)
     }
 
-    /// Hands the command to Terminal.app via AppleScript. `do script` opens
-    /// a new Terminal window and runs the command. We don't try to "type
-    /// without enter" — that path needs Accessibility permission and is
-    /// jankier than just executing in a fresh window the user can see.
     private func runInTerminal(_ command: String) {
-        // Escape backslashes and double-quotes for the AppleScript string
-        // literal; backslash first so the second pass doesn't double-escape.
-        let escaped = command
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-        let script = """
-        tell application "Terminal"
-            activate
-            do script "\(escaped)"
-        end tell
-        """
-        if let appleScript = NSAppleScript(source: script) {
-            var err: NSDictionary?
-            appleScript.executeAndReturnError(&err)
-            // If err is non-nil it usually means user denied Automation
-            // permission for Terminal. Silently fail — the macOS prompt
-            // already told them what to do.
-        }
+        HeadlessTerminal.run(command)
     }
 
     private func symbolForKind(_ kind: PackageRecord.Kind) -> String {
@@ -656,5 +681,62 @@ private struct RecordRow: View {
         case .launchAgent:          return "gear.badge"
         case .launchDaemon:         return "gear.badge.checkmark"
         }
+    }
+}
+
+/// File-scoped helper so both `HeadlessView` (Update all) and `RecordRow`
+/// (per-row "Open Terminal and run") can hand commands to Terminal without
+/// duplicating the AppleScript boilerplate.
+enum HeadlessTerminal {
+    enum RunError: LocalizedError {
+        case scriptCompileFailed
+        case appleScriptError(message: String, number: Int)
+
+        var errorDescription: String? {
+            switch self {
+            case .scriptCompileFailed:
+                return "Could not compile the Terminal AppleScript."
+            case .appleScriptError(let msg, let num):
+                // -1743 = errAEEventNotPermitted (Automation permission denied/missing).
+                if num == -1743 {
+                    return "Terminal denied automation access. Open System Settings → Privacy & Security → Automation, enable Terminal under ZoneKey Pro, then try again."
+                }
+                return "AppleScript error \(num): \(msg)"
+            }
+        }
+    }
+
+    /// Hands the command to Terminal.app via AppleScript. `do script` opens
+    /// a new Terminal window and runs the command. We don't try to "type
+    /// without enter" — that path needs Accessibility permission and is
+    /// jankier than just executing in a fresh window the user can see.
+    ///
+    /// Returns nil on success, an error otherwise. Caller should surface
+    /// the error to the user — silent failures here look like ZoneKey is
+    /// broken when actually macOS is gating the event.
+    @discardableResult
+    static func run(_ command: String) -> RunError? {
+        // Escape backslashes and double-quotes for the AppleScript string
+        // literal; backslash first so the second pass doesn't double-escape.
+        let escaped = command
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        let script = """
+        tell application "Terminal"
+            activate
+            do script "\(escaped)"
+        end tell
+        """
+        guard let appleScript = NSAppleScript(source: script) else {
+            return .scriptCompileFailed
+        }
+        var err: NSDictionary?
+        appleScript.executeAndReturnError(&err)
+        if let err = err {
+            let msg = err[NSAppleScript.errorMessage] as? String ?? "Unknown"
+            let num = err[NSAppleScript.errorNumber] as? Int ?? 0
+            return .appleScriptError(message: msg, number: num)
+        }
+        return nil
     }
 }

@@ -77,6 +77,7 @@ struct TagSetupSheet: View {
                         .foregroundColor(.secondary)
                 }
                 .buttonStyle(.plain)
+                .focusable(false)        // suppress the blue focus ring
                 .help("Cancel without changes")
             }
             Text("Rename, recolor, delete, or add tags before the LLM classifies your apps. Descriptions are only sent to the model for tags that still match a default seed name.")
