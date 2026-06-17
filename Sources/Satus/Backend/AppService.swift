@@ -563,21 +563,67 @@ class AppService: ObservableObject {
         }
     }
     
-    private func scanDirectory(at url: URL) -> [AppItem] {
+    /// Recursively walks `url` looking for `.app` bundles, descending into
+    /// regular subdirectories but never into other `.app` packages.
+    /// Depth limit prevents pathological recursion (a misconfigured symlink
+    /// pointing back at /Applications would otherwise loop forever).
+    ///
+    /// Handles real-world nested layouts:
+    /// - Adobe Acrobat DC / Adobe Acrobat.app   (depth 2)
+    /// - Hear3D / *.app                          (depth 2)
+    /// - Nik Collection 7 / *.app                (depth 2)
+    /// - Unity / Hub / Editor / <ver> / Unity.app (depth 5)
+    private func scanDirectory(at url: URL, maxDepth: Int = 6) -> [AppItem] {
         var items: [AppItem] = []
-        guard let enumerator = fileManager.enumerator(at: url, includingPropertiesForKeys: [.isApplicationKey], options: [.skipsPackageDescendants, .skipsHiddenFiles]) else { return [] }
-        
-        for case let fileURL as URL in enumerator {
-            guard fileURL.pathExtension == "app" else { continue }
-            if let bundle = Bundle(url: fileURL), let info = bundle.infoDictionary, let rawID = bundle.bundleIdentifier {
-                let bundleID = rawID.trimmingCharacters(in: .whitespacesAndNewlines)
-                let name = (info["CFBundleDisplayName"] as? String) ?? (info["CFBundleName"] as? String) ?? fileURL.deletingPathExtension().lastPathComponent
-                let icon = NSWorkspace.shared.icon(forFile: fileURL.path)
-                let category = info["LSApplicationCategoryType"] as? String
-                items.append(AppItem(id: bundleID, name: name, icon: icon, url: fileURL, category: category))
+        scanRecursively(at: url, depth: 0, maxDepth: maxDepth, into: &items)
+        #if DEBUG
+        print("Scanned \(url.path) → \(items.count) apps")
+        #endif
+        return items
+    }
+
+    private func scanRecursively(at url: URL,
+                                 depth: Int,
+                                 maxDepth: Int,
+                                 into items: inout [AppItem]) {
+        guard depth <= maxDepth else { return }
+        guard let entries = try? fileManager.contentsOfDirectory(
+            at: url,
+            includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
+            options: [.skipsHiddenFiles]
+        ) else { return }
+
+        for entry in entries {
+            if entry.pathExtension == "app" {
+                // Treat as an app bundle — try to construct an AppItem and
+                // do NOT recurse inside the package.
+                if let item = makeAppItem(from: entry) {
+                    items.append(item)
+                }
+            } else {
+                // Regular subdirectory — recurse if it's actually a directory.
+                let isDir = (try? entry.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
+                if isDir {
+                    scanRecursively(at: entry, depth: depth + 1, maxDepth: maxDepth, into: &items)
+                }
             }
         }
-        return items
+    }
+
+    /// Builds an `AppItem` from a `.app` bundle URL, or nil if the bundle
+    /// is unreadable or missing a bundle identifier.
+    private func makeAppItem(from fileURL: URL) -> AppItem? {
+        guard let bundle = Bundle(url: fileURL),
+              let info = bundle.infoDictionary,
+              let rawID = bundle.bundleIdentifier
+        else { return nil }
+        let bundleID = rawID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = (info["CFBundleDisplayName"] as? String)
+            ?? (info["CFBundleName"] as? String)
+            ?? fileURL.deletingPathExtension().lastPathComponent
+        let icon = NSWorkspace.shared.icon(forFile: fileURL.path)
+        let category = info["LSApplicationCategoryType"] as? String
+        return AppItem(id: bundleID, name: name, icon: icon, url: fileURL, category: category)
     }
     
     // MARK: - Actions
